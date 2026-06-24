@@ -20,7 +20,6 @@ const DiceRoller2DHook = {
     this._setup()
     this.handleEvent(`dic_ex:roll:${this._id}`, (payload) => this._roll(payload))
     this.handleEvent(`dic_ex:error:${this._id}`, (payload) => this._error(payload))
-    this.handleEvent("dic_ex:theme", (payload) => this._setTheme(payload))
   },
 
   destroyed() {
@@ -163,14 +162,6 @@ const DiceRoller2DHook = {
 
   _error(payload) {
     this.el.dataset.error = payload?.message || "invalid"
-  },
-
-  _setTheme(payload) {
-    // accept either a custom palette map or a built-in name
-    if (payload?.palette) this._theme = payload.palette
-    else if (payload?.theme) this._theme = payload.theme
-    // repaint idle dice if we're not mid-roll
-    if (!this._tumble) this._spawnIdle()
   }
 }
 

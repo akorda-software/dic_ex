@@ -18,14 +18,20 @@ async function loadRapier() {
 const DiceRollerHook = {
   mounted() {
     this._id = this.el.id
+    this._destroyed = false
     this._setup()
     this.handleEvent(`dic_ex:roll:${this._id}`, (payload) => this._roll(payload))
     this.handleEvent(`dic_ex:error:${this._id}`, (payload) => this._error(payload))
-    this.handleEvent("dic_ex:theme", (payload) => this._setTheme(payload))
     window.addEventListener("resize", this._resizeHandler = () => this._scene?.resize())
   },
 
   destroyed() {
+    this._destroyed = true
+    this._pending = null
+    if (this._retryTimer) {
+      clearTimeout(this._retryTimer)
+      this._retryTimer = null
+    }
     window.removeEventListener("resize", this._resizeHandler)
     this._ro?.disconnect()
     this._scene?.dispose()
@@ -47,11 +53,11 @@ const DiceRollerHook = {
       canvas.style.display = "block"
       stage.appendChild(canvas)
     }
-    this._canvas = canvas
 
     const theme = this.el.dataset.palette ? JSON.parse(this.el.dataset.palette) : "obsidian"
     try {
       const rapier = await loadRapier()
+      if (this._destroyed) return
       this._scene = new DiceScene(canvas, THREE, rapier, theme)
       // tell the LiveComponent exactly when the dice finish settling, so it can
       // reveal the result in sync with the animation (no fixed timer guess).
@@ -75,9 +81,16 @@ const DiceRollerHook = {
 
   _roll(payload) {
     if (!this._scene) {
-      // scene still initialising; retry shortly
+      // scene still initialising; schedule a single retry (deduped so multiple
+      // roll events during the async Rapier load can't fan out into a timer
+      // storm) and bail out once the hook is destroyed.
+      if (this._retryTimer || this._destroyed) return
       this._pending = payload
-      setTimeout(() => this._pending && this._roll(this._pending), 80)
+      this._retryTimer = setTimeout(() => {
+        this._retryTimer = null
+        if (this._destroyed) return
+        if (this._pending) this._roll(this._pending)
+      }, 80)
       return
     }
     this._pending = null
@@ -94,17 +107,6 @@ const DiceRollerHook = {
 
   _error(payload) {
     this.el.dataset.error = payload?.message || "invalid"
-  },
-
-  _setTheme(payload) {
-    // accept a custom palette map or a built-in name; repaint idle dice when idle
-    const next = payload?.palette || payload?.theme
-    if (!this._scene || !next) return
-    this._scene.setTheme(next)
-    if (!this._scene._expectSettle) {
-      this._scene.clear()
-      this._scene.spawnIdle()
-    }
   }
 }
 

@@ -2,14 +2,17 @@
 
 <p align="center"><strong>Pixel-art 3D dice roller for Phoenix LiveView</strong></p>
 
-`dicEx` computes authoritative D&D-style dice rolls in pure Elixir and pairs
-them with a Three.js + Rapier physics visualization that drops into any
-LiveView as a component or modal. The roll is the source of truth (computed
-server-side, seedable, testable); the tumbling dice are theatre and settle
-naturally without a post-roll correction spin.
+`dicEx` computes D&D-style dice rolls in pure Elixir and pairs them with a
+Three.js + Rapier physics visualization that drops into any LiveView as a
+component or modal. The rolls are seedable and testable; the tumbling dice are
+theatre that settle naturally without a post-roll correction spin.
 
-Built for **dragonEx** — an AI-driven D&D simulation — where the structured
-`%DicEx.Result{}` feeds the game master LLM and the 3D view sells the moment.
+Two reveal modes, both computed through Elixir so modifiers always apply:
+
+- **2D engine** — the server roll is the source of truth; the visible tumble
+  lands exactly on the value Elixir decided.
+- **3D engine** — *physics is truth*: the dice land where Rapier takes them and
+  the landed faces are reported back, so what you see is what happened.
 
 ## Features
 
@@ -20,8 +23,9 @@ Built for **dragonEx** — an AI-driven D&D simulation — where the structured
   flags, and a JSON-friendly `to_map/1` for LLM consumption.
 - **3D pixel-art dice** — low-poly d4/d6/d8/d10/d12/d20 with procedurally drawn
   bitmap-font textures and real Rapier physics.
-- **Drop-in LiveView component** — inline or modal, themed (`obsidian` / `arcane`).
-- **No web dependency required for the core** — `phoenix_live_view` is optional.
+- **Drop-in LiveView component** — inline or modal, themed (`obsidian` / `arcane` / `dnd`).
+- **No web dependency required for the core** — `phoenix_live_view` (+ `jason`)
+  are optional; only needed for the component.
 
 ## Installation
 
@@ -39,7 +43,7 @@ Then:
 
 ```bash
 mix deps.get
-mix dic_ex.install   # copies dic_ex.min.js + dic_ex.css into priv/static
+mix dic_ex.install   # copies dic_ex.min.js -> assets/vendor, dic_ex.css -> assets/css
 ```
 
 ## Core usage (pure Elixir)
@@ -69,14 +73,17 @@ DicEx.roll("4d6", seed: 42)
   expression: "2d20kh1 + 5",
   total: 23,
   groups: [
-    %{kind: :dice, sides: 20, subtotal: 18, modifiers: [{:keep_high, 1}],
-      rolls: [%{value: 18, kept: true}, %{value: 7, kept: false}]},
-    %{kind: :modifier, subtotal: 5}
+    %{kind: :dice, notation: nil, sides: 20, subtotal: 18, modifiers: [{:keep_high, 1}],
+      rolls: [%{value: 18, kept: true, exploded: false}, %{value: 7, kept: false, exploded: false}]},
+    %{kind: :modifier, notation: nil, sides: nil, subtotal: 5, modifiers: [], rolls: []}
   ]
 }
 
 DicEx.Result.to_map(result)   # JSON-ready map for your LLM / client
 ```
+
+The per-group `notation` is left `nil`; the full expression lives on the
+top-level `expression` field.
 
 ### Notation reference
 
@@ -118,29 +125,29 @@ const liveSocket = new LiveSocket("/live", Socket, { hooks, /* ... */ })
 <.live_component module={DicExWeb.DiceRoller} id="dice-roller" />
 ```
 
-### Receiving rolls (dragonEx integration)
+### Receiving rolls
 
 Pass `on_roll: self()` and the host LiveView is notified with the full result,
-ready to hand to the AI game master:
+ready to hand to an AI game master or any other consumer:
 
 ```elixir
 <.live_component module={DicExWeb.DiceRoller} id="roller" on_roll={self()} />
 
-def handle_info({:dic_ex_rolled, %{result: result}}, socket) do
+def handle_info({:dic_ex_rolled, %{result: result, component: id}}, socket) do
   # result is a %DicEx.Result{} — feed its JSON map to the LLM
-  DragonEx.GameMaster.register_roll(DicEx.Result.to_map(result))
   {:noreply, socket}
 end
 ```
 
 ### Options
 
-| Option      | Default     | Description                                            |
-| ----------- | ----------- | ------------------------------------------------------ |
-| `:default`  | `"1d20"`    | Initial expression                                      |
-| `:theme`    | `"obsidian"`| `"obsidian"` or `"arcane"`                             |
-| `:on_roll`  | `nil`       | `pid`/registered name to receive `{:dic_ex_rolled, _}` |
-| `:autoplay` | `false`     | Roll once on mount                                      |
+| Option     | Default      | Description                                              |
+| ---------- | ------------ | -------------------------------------------------------- |
+| `:default` | `"1d20"`     | Initial expression                                        |
+| `:theme`   | `"obsidian"` | `"obsidian"`, `"arcane"` or `"dnd"`, or a custom palette |
+| `:engine`  | `"3d"`       | `"3d"` (Three.js + Rapier) or `"2d"` (canvas, no physics) |
+| `:rng`     | `nil`        | RNG module; `nil` ⇒ `DicEx.RNG.Default` (seedable)        |
+| `:on_roll` | `nil`        | `pid` / registered name to receive `{:dic_ex_rolled, _}`   |
 
 ## Building assets from source
 
@@ -165,9 +172,12 @@ dic_ex/
 └── priv/static/                   # prebuilt dic_ex.min.js + dic_ex.css
 ```
 
-The roll is computed **before** any animation. The JS hook receives the result
-via `push_event("dic_ex:roll", ...)`, starts the physical throw, and reveals the
-server result once every visible die has settled.
+The roll is computed through Elixir for both engines. The 2D hook receives the
+server result via `push_event("dic_ex:roll", ...)`, tumbles the dice, and reveals
+it in sync. The 3D hook throws the dice physically and, once they settle,
+reports the landed faces back (`dic_ex:landed`) so Elixir recomputes the result
+around the physics outcome — modifiers (kh/dl/explode…) still apply, and the
+revealed total matches exactly what landed on the table.
 
 ## License
 

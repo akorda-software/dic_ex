@@ -259,11 +259,25 @@ export class DiceScene {
 
   clear() {
     for (const d of this.dice) {
-      this.scene.remove(d.mesh)
+      this._disposeMesh(d.mesh)
       if (d.body) this.world.removeRigidBody(d.body)
     }
     this.dice = []
     this._expectSettle = false
+  }
+
+  // Dispose a mesh's GPU resources (geometry + every material + its textures).
+  // Without this every roll leaks geometry and per-face CanvasTextures, since
+  // Three.js does not GC GPU memory on garbage collection.
+  _disposeMesh(mesh) {
+    if (!mesh) return
+    this.scene?.remove(mesh)
+    mesh.geometry?.dispose()
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+    for (const m of mats) {
+      m.map?.dispose()
+      m.dispose()
+    }
   }
 
   // Static dice placed on the stage so the scene is never empty before the
@@ -371,14 +385,6 @@ export class DiceScene {
     return total <= 1 ? 0 : -spread / 2 + (index / (total - 1)) * spread
   }
 
-  _desaturate(mesh) {
-    mesh.material = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
-    for (const m of mesh.material) {
-      m.transparent = true
-      m.opacity = 0.32
-    }
-  }
-
   // --- simulation -----------------------------------------------------------
 
   resize() {
@@ -405,7 +411,18 @@ export class DiceScene {
 
   dispose() {
     this.stop()
+    this.clear()
+    this._disposeMesh(this._platform)
+    if (this._grid) {
+      this.scene.remove(this._grid)
+      this._grid.geometry?.dispose()
+      this._grid.material?.dispose()
+    }
+    this.scene = null
     this.renderer.dispose()
+    // Release the WebGL context promptly so GPU memory is reclaimed now, not
+    // when the canvas is eventually GC'd.
+    this.renderer.forceContextLoss?.()
   }
 
   _loop() {

@@ -1,7 +1,7 @@
 defmodule DicEx.Result do
   @moduledoc """
   The outcome of a roll: a structured, AI/consumer-friendly record plus helpers
-  to reduce it to plain data (`to_map/1`) or a single total (`total/1`).
+  to reduce it to plain data (`to_map/1`) or flatten its kept dice (`kept_values/1`).
 
   A result is made of one or more *groups*. Each group is either a dice pool
   (e.g. `2d20kh1`) or a constant modifier (e.g. `5`). Dice groups carry the
@@ -15,12 +15,17 @@ defmodule DicEx.Result do
         expression: "2d20kh1 + 5",
         total: 23,
         groups: [
-          %{kind: :dice, notation: "2d20kh1", sides: 20, subtotal: 18,
+          %{kind: :dice, notation: nil, sides: 20, subtotal: 18,
             modifiers: [{:keep_high, 1}],
-            rolls: [%{value: 18, kept: true}, %{value: 7, kept: false}]},
-          %{kind: :modifier, notation: "5", subtotal: 5}
+            rolls: [%{value: 18, kept: true, exploded: false},
+                    %{value: 7, kept: false, exploded: false}]},
+          %{kind: :modifier, notation: nil, sides: nil, subtotal: 5,
+            modifiers: [], rolls: []}
         ]
       }
+
+  Note the per-group `notation` is left `nil`; the full expression is on the
+  top-level `expression` field.
   """
 
   defstruct expression: nil, total: 0, groups: []
@@ -28,12 +33,12 @@ defmodule DicEx.Result do
   @type roll :: %{
           value: pos_integer(),
           kept: boolean(),
-          exploded: boolean() | nil
+          exploded: boolean()
         }
 
   @type group :: %{
           kind: :dice | :modifier,
-          notation: String.t(),
+          notation: String.t() | nil,
           sides: pos_integer() | nil,
           subtotal: integer(),
           modifiers: [term()],

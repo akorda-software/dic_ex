@@ -38,7 +38,6 @@ defmodule DicEx.ParserTest do
     test "explode variants" do
       assert {:ok, {:dice, 8, 6, [{:explode, :standard}]}} = Parser.parse("8d6!")
       assert {:ok, {:dice, 1, 6, [{:explode, :penetrate}]}} = Parser.parse("1d6!p")
-      assert {:ok, {:dice, 1, 6, [{:explode, :compound}]}} = Parser.parse("1d6!!")
     end
 
     test "reroll bare defaults to <= and repeat" do

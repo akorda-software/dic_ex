@@ -10,6 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - 3D dice now stop exactly where Rapier physics leaves them instead of rotating
   after settling to face the authoritative value.
+- Removed the undocumented `!!` (compound explode) token: it parsed but behaved
+  identically to `!`. Standard (`!`) and penetrate (`!p`) are unaffected.
+
+### Fixed
+- Multi-pool subtraction now applies its sign to every right-hand group and
+  preserves group order for 3+ term expressions (e.g. `1d20+5-2`, `2d6-1d4`).
+- `kept`/`dropped` flags are now correct for dice pools with duplicate values
+  (e.g. `4d6dl1` on tied rolls) — `kept_values/1` and the render no longer
+  undercount.
+- 3D engine now disposes Three.js geometries, materials and textures on clear
+  and teardown, fixing an unbounded GPU-memory leak across rolls.
+- 3D hook no longer leaks retry timers while the physics scene initialises, and
+  cancels pending work on `destroyed()`.
+- `Theme.resolve/1` with a string-keyed map (e.g. from JSON) is now applied
+  instead of silently falling back to the defaults.
+- LiveView component: the reveal-fallback timer is now tagged per roll so it
+  can't overwrite a later roll's result.
+- Added `:crypto` to `extra_applications` (used by `DicEx.RNG.Entropy`).
 
 ## [0.1.0] - 2026-06-23
 

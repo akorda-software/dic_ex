@@ -76,14 +76,11 @@ defmodule DicEx.Parser do
 
   defp tokenize(<<>>, _buf, acc), do: {:ok, Enum.reverse(acc) |> List.flatten()}
 
-  defp tokenize(<<" ", rest::binary>>, [], acc), do: tokenize(rest, [], acc)
-  defp tokenize(<<"\t", rest::binary>>, [], acc), do: tokenize(rest, [], acc)
-  defp tokenize(<<"\n", rest::binary>>, [], acc), do: tokenize(rest, [], acc)
+  defp tokenize(<<c, rest::binary>>, [], acc) when c in ~c" \t\n\r", do: tokenize(rest, [], acc)
 
   defp tokenize(<<"!", rest::binary>>, _buf, acc) do
     case rest do
       <<"p", r2::binary>> -> tokenize(r2, [], [{:explode, :penetrate} | acc])
-      <<"!", r2::binary>> -> tokenize(r2, [], [{:explode, :compound} | acc])
       _ -> tokenize(rest, [], [{:explode, :standard} | acc])
     end
   end
@@ -108,9 +105,8 @@ defmodule DicEx.Parser do
     tokenize(remaining, [], [{:cmp, Map.fetch!(@comparators, sym)} | acc])
   end
 
-  defp tokenize(<<c, rest::binary>>, [], acc) when c in ~c"+-*/()" do
-    op = op_token(c)
-    tokenize(rest, [], [op | acc])
+  defp tokenize(<<c, rest::binary>>, [], acc) when c in ~c"+-" do
+    tokenize(rest, [], [op_token(c) | acc])
   end
 
   defp tokenize(other, _buf, _acc) do
@@ -149,17 +145,12 @@ defmodule DicEx.Parser do
 
   defp op_token(?+), do: :add
   defp op_token(?-), do: :sub
-  defp op_token(?*), do: :mul
-  defp op_token(?/), do: :div
-  defp op_token(?(), do: :lparen
-  defp op_token(?)), do: :rparen
 
   # ----------------------------------------------------------------- parsing
 
   defp parse_expr(tokens) do
-    with {:ok, left, rest} <- parse_term(tokens),
-         {:ok, ast, rest} <- parse_expr_rest(rest, left) do
-      {:ok, ast, rest}
+    with {:ok, left, rest} <- parse_term(tokens) do
+      parse_expr_rest(rest, left)
     end
   end
 
@@ -214,7 +205,7 @@ defmodule DicEx.Parser do
   defp parse_dice(_), do: {:error, "malformed dice pool"}
 
   defp parse_modifiers([{:explode, mode} | rest], acc)
-       when mode in [:standard, :penetrate, :compound] do
+       when mode in [:standard, :penetrate] do
     parse_modifiers(rest, [{:explode, mode} | acc])
   end
 

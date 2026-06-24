@@ -6,6 +6,7 @@ defmodule DicEx.Roller do
   # sessions) can be swapped in without touching the evaluator.
 
   alias DicEx.Result
+  alias DicEx.RNG.Deterministic
 
   @doc """
   Evaluates an AST produced by `DicEx.Parser.parse/1`.
@@ -16,14 +17,7 @@ defmodule DicEx.Roller do
   """
   def evaluate(ast, rng) do
     {groups, rng} = eval_node(ast, [], rng)
-
-    total =
-      groups
-      |> Enum.reduce(0, fn
-        %{subtotal: n}, acc when n >= 0 -> acc + n
-        %{subtotal: n}, acc -> acc + n
-      end)
-
+    total = Enum.reduce(groups, 0, fn g, acc -> acc + g.subtotal end)
     {%Result{expression: nil, total: total, groups: Enum.reverse(groups)}, rng}
   end
 
@@ -39,17 +33,16 @@ defmodule DicEx.Roller do
     {right_groups, rng} = eval_node(right, [], rng)
 
     # Operators only adjust the running subtotal; individual groups stay intact
-    # so rendering/LLM data is never lossy.
-    case {left_groups, right_groups} do
-      {[lg], [rg]} ->
-        sign = if op == :-, do: -1, else: 1
-        merged = %{rg | subtotal: sign * rg.subtotal}
-        {[merged, lg | acc], rng}
-
-      _ ->
-        {left_groups ++ right_groups ++ acc, rng}
-    end
+    # so rendering/LLM data is never lossy. Both sides are accumulated in
+    # reverse (prepend) order, so we prepend right then left into `acc` to keep
+    # the final (post-`Enum.reverse`) order correct and apply the sign to every
+    # right-hand group — not just the single-group case.
+    right_groups = apply_sign(right_groups, op)
+    {right_groups ++ left_groups ++ acc, rng}
   end
+
+  defp apply_sign(groups, :-), do: Enum.map(groups, &%{&1 | subtotal: -&1.subtotal})
+  defp apply_sign(groups, _), do: groups
 
   # --- dice pool evaluation ------------------------------------------------
   # Modifier application order (D&D conventional):
@@ -102,13 +95,11 @@ defmodule DicEx.Roller do
     recorded = if is_trigger? or mode != :penetrate, do: value, else: max(value - 1, 1)
     entry = %{value: recorded, kept: true, exploded: not is_trigger?}
 
-    cond do
-      value == sides and length(acc) < 50 ->
-        {next, rng} = next_roll(sides, rng)
-        expand_explode(next, sides, mode, rng, [entry | acc], count + 1)
-
-      true ->
-        {Enum.reverse([entry | acc]), rng}
+    if value == sides and count < 50 do
+      {next, rng} = next_roll(sides, rng)
+      expand_explode(next, sides, mode, rng, [entry | acc], count + 1)
+    else
+      {Enum.reverse([entry | acc]), rng}
     end
   end
 
@@ -199,16 +190,24 @@ defmodule DicEx.Roller do
   end
 
   defp mark_kept(rolls, kept_rolls) do
-    kept_set = kept_rolls |> Enum.map(&{&1.value, &1.exploded}) |> MapSet.new()
+    # Count how many of each {value, exploded} pair must be kept, then decrement
+    # so duplicate face values are marked positionally — a MapSet would dedupe
+    # identical pairs and undercount the kept dice (e.g. 4d6dl1 on all 5s).
+    counts =
+      Enum.reduce(kept_rolls, %{}, fn r, acc ->
+        Map.update(acc, {r.value, r.exploded}, 1, &(&1 + 1))
+      end)
 
     {marked, _} =
-      Enum.map_reduce(rolls, kept_set, fn roll, remaining ->
+      Enum.map_reduce(rolls, counts, fn roll, counts ->
         key = {roll.value, roll.exploded}
 
-        if MapSet.member?(remaining, key) do
-          {%{roll | kept: true}, MapSet.delete(remaining, key)}
-        else
-          {%{roll | kept: false}, remaining}
+        case counts do
+          %{^key => n} when n > 0 ->
+            {%{roll | kept: true}, Map.put(counts, key, n - 1)}
+
+          _ ->
+            {%{roll | kept: false}, counts}
         end
       end)
 
@@ -229,8 +228,8 @@ defmodule DicEx.Roller do
   end
 
   # Pulls the next integer from whatever RNG flavour we were handed.
-  defp next_roll(sides, {DicEx.RNG.Deterministic, _} = rng) do
-    {value, rng} = DicEx.RNG.Deterministic.next(rng)
+  defp next_roll(sides, {Deterministic, _} = rng) do
+    {value, rng} = Deterministic.next(rng)
 
     value =
       case value do

@@ -122,7 +122,15 @@ defmodule DicEx.Theme do
   def resolve(theme) when is_binary(theme),
     do: Map.merge(@defaults, Map.get(@builtins, theme, %{}))
 
-  def resolve(theme) when is_map(theme), do: Map.merge(@defaults, theme)
+  def resolve(theme) when is_map(theme) do
+    # Normalise string keys to atoms so a theme built from JSON/config
+    # (`%{"bg" => ...}`) is not silently discarded by the atom-keyed defaults.
+    normalized = Map.new(theme, fn {k, v} -> {normalize_key(k), v} end)
+    Map.merge(@defaults, normalized)
+  end
+
+  defp normalize_key(k) when is_atom(k), do: k
+  defp normalize_key(k) when is_binary(k), do: String.to_atom(k)
 
   @doc """
   The CSS custom properties for the component chrome, as a keyword list of

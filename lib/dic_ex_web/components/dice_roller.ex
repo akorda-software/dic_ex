@@ -1,4 +1,4 @@
-if Code.ensure_loaded?(Phoenix.LiveComponent) do
+if Code.ensure_loaded?(Phoenix.LiveComponent) and Code.ensure_loaded?(Jason) do
   defmodule DicExWeb.DiceRoller do
     @moduledoc """
     A self-contained LiveComponent that renders the pixel-art 3D dice roller.
@@ -30,17 +30,15 @@ if Code.ensure_loaded?(Phoenix.LiveComponent) do
         non-replayable randomness. Applies to whichever engine is selected.
       * `on_roll` — a `pid` (or registered name) to notify of every roll via
         `send/2` with `{:dic_ex_rolled, %{result: result, component: id}}`.
-        dragonEx uses this to feed the AI game master the structured outcome.
-      * `autoplay` — if `true`, performs an initial roll on mount (default `false`).
+        The host uses this to feed the AI game master the structured outcome.
 
-    ## Receiving rolls (dragonEx integration)
+    ## Receiving rolls
 
         <.live_component module={DicExWeb.DiceRoller} id="roller"
           on_roll={self()} />
 
         def handle_info({:dic_ex_rolled, %{result: result}}, socket) do
           # result is a %DicEx.Result{}; feed its JSON map to the LLM
-          DragonEx.GameMaster.register_roll(result)
           {:noreply, socket}
         end
     """
@@ -150,11 +148,11 @@ if Code.ensure_loaded?(Phoenix.LiveComponent) do
        |> assign(:result, nil)
        |> assign(:pending_result, nil)
        |> assign(:rolling, false)
+       |> assign(:roll_nonce, 0)
        |> assign_theme("obsidian")
        |> assign(:engine, "3d")
        |> assign(:rng, nil)
-       |> assign(:on_roll, nil)
-       |> assign(:autoplay, false)}
+       |> assign(:on_roll, nil)}
     end
 
     # Collapse a theme option into the three assigns the template needs:
@@ -172,12 +170,16 @@ if Code.ensure_loaded?(Phoenix.LiveComponent) do
 
     # Fallback only: if the dice never report settling (scene failed to init,
     # tab was backgrounded, ...) reveal anyway after a generous timeout. The
-    # "dic_ex:settled" event is the primary, in-sync reveal path.
+    # "dic_ex:settled"/"dic_ex:landed" events are the primary, in-sync paths.
     @reveal_fallback 6000
 
+    # The fallback timer carries the roll's nonce so it can't overwrite a later
+    # roll's result if it fires stale (e.g. roll A settled, roll B started,
+    # then A's timer wakes).
     @impl true
-    def update(%{reveal: result}, socket) do
-      {:ok, maybe_reveal(socket, result)}
+    def update(%{reveal: result, nonce: nonce}, socket) do
+      {:ok,
+       if(socket.assigns.roll_nonce == nonce, do: maybe_reveal(socket, result), else: socket)}
     end
 
     def update(%{id: id} = opts, socket) do
@@ -188,7 +190,6 @@ if Code.ensure_loaded?(Phoenix.LiveComponent) do
         |> assign(:engine, Map.get(opts, :engine, "3d"))
         |> assign(:rng, Map.get(opts, :rng))
         |> assign(:on_roll, Map.get(opts, :on_roll))
-        |> assign(:autoplay, Map.get(opts, :autoplay, false))
 
       socket =
         case Map.fetch(opts, :default) do
@@ -240,12 +241,14 @@ if Code.ensure_loaded?(Phoenix.LiveComponent) do
       case DicEx.roll_e(expression, roll_opts(socket.assigns[:rng])) do
         {:ok, result} ->
           # animation kicks off immediately; the result is revealed when the dice
-          # report settling ("dic_ex:settled"), with a fallback timer as safety.
+          # report settling/landing, with a fallback timer as safety. The nonce
+          # tags this roll so the timer can't reveal a stale result.
           id = socket.assigns.id
+          nonce = socket.assigns.roll_nonce + 1
 
           Task.start(fn ->
             Process.sleep(@reveal_fallback)
-            send_update(__MODULE__, %{id: id, reveal: result})
+            send_update(__MODULE__, %{id: id, reveal: result, nonce: nonce})
           end)
 
           {:noreply,
@@ -253,6 +256,7 @@ if Code.ensure_loaded?(Phoenix.LiveComponent) do
            |> assign(:rolling, true)
            |> assign(:result, nil)
            |> assign(:pending_result, result)
+           |> assign(:roll_nonce, nonce)
            |> push_roll(result)}
 
         {:error, reason} ->
@@ -298,15 +302,12 @@ if Code.ensure_loaded?(Phoenix.LiveComponent) do
     @rolled_msg :dic_ex_rolled
 
     defp notify_host(socket, %Result{} = result) do
+      payload = {@rolled_msg, %{result: result, component: socket.assigns.id}}
+
       case socket.assigns[:on_roll] do
-        nil ->
-          :ok
-
-        target when is_pid(target) ->
-          send(target, {@rolled_msg, %{result: result, component: socket.assigns.id}})
-
-        name when is_atom(name) ->
-          send(name, {@rolled_msg, %{result: result, component: socket.assigns.id}})
+        nil -> :ok
+        {name, node} when is_atom(name) and is_atom(node) -> send({name, node}, payload)
+        target when is_pid(target) or is_atom(target) -> send(target, payload)
       end
     end
 

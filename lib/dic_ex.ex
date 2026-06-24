@@ -45,9 +45,16 @@ defmodule DicEx do
 
   Or thread an explicit RNG module/tuple via the lower-level `roll/2` second
   argument.
+
+  > #### A note on `:seed` {: .warning}
+  > `:seed` reseeds the *calling process's* `:rand` state to produce a
+  > reproducible sequence. The prior state is not restored, so in a long-lived
+  > process (e.g. a LiveView) a later unseeded `roll/2` continues the seeded
+  > sequence rather than drawing fresh entropy. Thread `:rng` explicitly when
+  > you need isolation, or re-seed per request.
   """
 
-  alias DicEx.{Parser, Result, Roller, RNG}
+  alias DicEx.{Parser, Result, RNG, Roller}
 
   @default_rng RNG.Default
 

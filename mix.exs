@@ -6,7 +6,7 @@ defmodule DicEx.MixProject do
   @description """
   Pixel-art 3D dice roller for Phoenix LiveView. Authoritative rolls in Elixir
   (D&D-style notation: NdS, advantage/disadvantage, drop/keep, explode) with an
-  optional Three.js + Rapier physics visualization. Built for dragonEx.
+  optional Three.js + Rapier physics visualization.
   """
 
   def project do
@@ -22,8 +22,7 @@ defmodule DicEx.MixProject do
       docs: docs(),
       source_url: @source_url,
       elixirc_paths: elixirc_paths(Mix.env()),
-      aliases: aliases(),
-      listeners: [Phoenix.CodeReloader]
+      aliases: aliases()
     ]
   end
 
@@ -32,7 +31,7 @@ defmodule DicEx.MixProject do
 
   def application do
     [
-      extra_applications: [:logger]
+      extra_applications: [:logger, :crypto]
     ]
   end
 

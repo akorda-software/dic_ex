@@ -1,7 +1,7 @@
 defmodule DicEx.RollerTest do
   use ExUnit.Case, async: true
 
-  alias DicEx.{Parser, Roller, Result}
+  alias DicEx.{Parser, Result, Roller}
   alias DicEx.RNG.Deterministic
 
   # Roll via the deterministic RNG so every value is pinned.
@@ -115,6 +115,41 @@ defmodule DicEx.RollerTest do
       result = roll("1d20-2", [15])
       assert result.total == 13
     end
+
+    test "chained subtraction applies the sign to every later group" do
+      assert roll("1d6+2-3", [4]).total == 3
+      assert roll("1d6-2-3", [4]).total == -1
+    end
+
+    test "subtracting a pool from a compound left operand keeps the sign" do
+      # regression: the multi-group branch used to drop the minus sign
+      assert roll("2d6-1d4", [5, 3, 2]).total == 6
+      assert roll("1d8+2d6-3", [7, 3, 5]).total == 12
+    end
+
+    test "groups preserve source order across 3+ terms" do
+      result = roll("1d8+2d6+2", [7, 3, 5])
+      assert result.total == 17
+      assert Enum.map(result.groups, & &1.subtotal) == [7, 8, 2]
+    end
+  end
+
+  describe "keep / drop with duplicate values" do
+    test "mark_kept keeps the right count on repeated faces" do
+      # regression: a MapSet of {value, exploded} deduped identical dice and
+      # undercounted kept flags (e.g. all-5s ability roll)
+      result = roll("4d6dl1", [5, 5, 5, 5])
+      assert result.total == 15
+      rolls = dice_rolls(result)
+      assert Enum.count(rolls, & &1.kept) == 3
+      assert Result.kept_values(result) == [5, 5, 5]
+    end
+
+    test "keep high with ties keeps exactly n" do
+      result = roll("4d6kh2", [5, 5, 5, 2])
+      assert result.total == 10
+      assert Enum.count(dice_rolls(result), & &1.kept) == 2
+    end
   end
 
   describe "result shape" do
@@ -134,6 +169,16 @@ defmodule DicEx.RollerTest do
       map = Result.to_map(result)
       assert is_integer(map.total)
       assert [%{rolls: [%{value: 5, kept: true}]} | _] = map.groups
+    end
+
+    test "to_roll_event produces the JS-hook payload shape" do
+      result = roll("2d20kh1+5", [4, 18])
+      event = Result.to_roll_event(result)
+
+      # expression is stamped by DicEx.roll/2, not the lower-level roller.
+      assert event.total == 23
+      assert [%{sides: 20, subtotal: 18, rolls: rolls}, %{sides: nil, subtotal: 5}] = event.groups
+      assert [%{value: 4, kept: false}, %{value: 18, kept: true}] = rolls
     end
 
     test "kept_values flattens kept dice" do
