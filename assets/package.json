@@ -1,0 +1,18 @@
+{
+  "name": "dic_ex-assets",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pixel-art 3D dice visualization assets for the dicEx Elixir package",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "~0.14.0",
+    "three": "~0.169.0"
+  },
+  "devDependencies": {
+    "esbuild": "~0.24.0"
+  }
+}

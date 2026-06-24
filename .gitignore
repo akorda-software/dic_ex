@@ -1,0 +1,44 @@
+# The directory Mix will write compiled artifacts to.
+/_build/
+
+# If you run "mix test --cover", coverage assets end up here.
+/cover/
+
+# The directory Mix downloads your dependencies sources to.
+/deps/
+
+# Where third-party dependencies like ExDoc output generated docs.
+/doc/
+
+# Temporary files, for example, from tests.
+/tmp/
+
+# If the VM crashes, it generates a dump, let's ignore it too.
+erl_crash.dump
+
+# Also ignore archive artifacts (built via "mix archive.build").
+*.ez
+
+# Ignore package tarball (built via "mix hex.build").
+dic_ex-*.tar
+
+# Mix lock: libraries don't commit mix.lock (apps do).
+/mix.lock
+
+# ElixirLS cache.
+/.elixir_ls/
+
+# JS assets build artifacts (pnpm + esbuild).
+/assets/node_modules/
+/assets/dist/
+
+# Editor / OS cruft.
+/.vscode/
+/.idea/
+*.swp
+.DS_Store
+
+# Secrets / local env.
+.env*
+!.env.example
+

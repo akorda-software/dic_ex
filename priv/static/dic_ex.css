@@ -1,0 +1,323 @@
+/* dicEx — pixel-art 3D dice roller component styles.
+ * Ship alongside priv/static/dic_ex.min.js. Theme via .dicex-theme-obsidian |
+ * .dicex-theme-arcane | .dicex-theme-dnd on the root. Pixel-friendly: hard
+ * edges, no rounded corners, chunky borders. */
+
+.dicex-roller {
+  --dicex-bg: #14101f;
+  --dicex-panel: #1c1530;
+  --dicex-edge: #3b2a63;
+  --dicex-ink: #e9d8a6;
+  --dicex-muted: #9a8fc4;
+  --dicex-accent: #b08a3e;
+  --dicex-good: #6ee7b7;
+  --dicex-bad: #f87171;
+  --dicex-stage-h: 320px;
+  --dicex-stage-glow: rgba(124, 92, 255, 0.12);
+  --dicex-stage-tile-a: #1a1428;
+  --dicex-stage-tile-b: #16111f;
+  --dicex-control-bg: #241a38;
+  --dicex-input-bg: #120e1d;
+  --dicex-pill-bg: #241a38;
+  --dicex-roll-ink: #1a1326;
+  --dicex-roll-border: #5a4520;
+  --dicex-roll-hover: #c79e54;
+  font-family: "Courier New", ui-monospace, monospace;
+  color: var(--dicex-ink);
+  background: var(--dicex-bg);
+  border: 3px solid var(--dicex-edge);
+  image-rendering: pixelated;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+}
+
+.dicex-roller.dicex-theme-arcane {
+  --dicex-bg: #f4e4c1;
+  --dicex-panel: #efe0bc;
+  --dicex-edge: #b08a3e;
+  --dicex-ink: #2a1f44;
+  --dicex-muted: #7a5fae;
+  --dicex-accent: #6a4f2a;
+  --dicex-good: #2f9e6e;
+  --dicex-bad: #b8324b;
+  --dicex-stage-glow: rgba(176, 138, 62, 0.20);
+  --dicex-stage-tile-a: #f1dfb7;
+  --dicex-stage-tile-b: #ead5a6;
+  --dicex-control-bg: #f5e7c4;
+  --dicex-input-bg: #fff8e8;
+  --dicex-pill-bg: #ead5a6;
+  --dicex-roll-ink: #1c132b;
+  --dicex-roll-border: #8d6a2f;
+  --dicex-roll-hover: #c79e54;
+}
+
+.dicex-roller.dicex-theme-dnd {
+  --dicex-bg: #160b08;
+  --dicex-panel: #24130d;
+  --dicex-edge: #9f7635;
+  --dicex-ink: #f5e7c8;
+  --dicex-muted: #c59f62;
+  --dicex-accent: #c7382b;
+  --dicex-good: #56a35d;
+  --dicex-bad: #e0493e;
+  --dicex-stage-glow: rgba(199, 56, 43, 0.22);
+  --dicex-stage-tile-a: #24110d;
+  --dicex-stage-tile-b: #1a0c09;
+  --dicex-control-bg: #34170f;
+  --dicex-input-bg: #0f0806;
+  --dicex-pill-bg: #34170f;
+  --dicex-roll-ink: #fff3dc;
+  --dicex-roll-border: #7a231a;
+  --dicex-roll-hover: #e04a3a;
+}
+
+.dicex-stage {
+  height: var(--dicex-stage-h);
+  min-height: 240px;
+  background:
+    linear-gradient(180deg, var(--dicex-stage-glow) 0%, rgba(20, 16, 31, 0) 60%),
+    repeating-conic-gradient(var(--dicex-stage-tile-a) 0% 25%, var(--dicex-stage-tile-b) 0% 50%) 50% / 24px 24px;
+  position: relative;
+  border-bottom: 3px solid var(--dicex-edge);
+}
+
+.dicex-stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.dicex-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  background: var(--dicex-panel);
+}
+
+.dicex-tray {
+  display: flex;
+  gap: 4px;
+}
+
+.dicex-die-btn,
+.dicex-step,
+.dicex-roll-btn {
+  font-family: inherit;
+  color: var(--dicex-ink);
+  background: var(--dicex-control-bg);
+  border: 2px solid var(--dicex-edge);
+  padding: 6px 8px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  image-rendering: pixelated;
+  transition: none;
+}
+
+.dicex-roller.dicex-theme-arcane .dicex-die-btn,
+.dicex-roller.dicex-theme-arcane .dicex-step,
+.dicex-roller.dicex-theme-arcane .dicex-roll-btn {
+  background: #e6d3a6;
+}
+
+.dicex-die-btn:hover,
+.dicex-step:hover {
+  background: var(--dicex-edge);
+  color: #fff;
+}
+
+.dicex-die-btn:active,
+.dicex-step:active {
+  transform: translate(1px, 1px);
+}
+
+.dicex-count {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dicex-count-value {
+  min-width: 28px;
+  text-align: center;
+  font-weight: bold;
+  color: var(--dicex-accent);
+}
+
+.dicex-step {
+  padding: 4px 8px;
+}
+
+.dicex-form {
+  display: flex;
+  flex: 1;
+  min-width: 180px;
+  gap: 6px;
+}
+
+.dicex-input {
+  flex: 1;
+  font-family: inherit;
+  color: var(--dicex-ink);
+  background: var(--dicex-input-bg);
+  border: 2px solid var(--dicex-edge);
+  padding: 6px 8px;
+  outline: none;
+}
+
+.dicex-roller.dicex-theme-arcane .dicex-input {
+  background: #fffbf0;
+}
+
+.dicex-input:focus {
+  border-color: var(--dicex-accent);
+}
+
+.dicex-roll-btn {
+  background: var(--dicex-accent);
+  color: var(--dicex-roll-ink);
+  font-weight: bold;
+  border-color: var(--dicex-roll-border);
+  padding: 6px 16px;
+}
+
+.dicex-clear-btn {
+  font-family: inherit;
+  color: var(--dicex-muted);
+  background: transparent;
+  border: 2px solid var(--dicex-edge);
+  padding: 6px 10px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 11px;
+}
+
+.dicex-clear-btn:hover {
+  color: var(--dicex-bad);
+  border-color: var(--dicex-bad);
+}
+
+.dicex-roll-btn:hover {
+  background: var(--dicex-roll-hover);
+}
+
+.dicex-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px;
+  background: var(--dicex-panel);
+  border-top: 2px solid var(--dicex-edge);
+}
+
+.dicex-total {
+  font-size: 42px;
+  font-weight: bold;
+  line-height: 1;
+  color: var(--dicex-accent);
+  text-shadow: 2px 2px 0 #00000040;
+}
+
+.dicex-rolling-total {
+  font-size: 20px;
+  color: var(--dicex-muted);
+  text-shadow: none;
+  letter-spacing: 2px;
+  animation: dicex-pulse 1s ease-in-out infinite;
+}
+
+@keyframes dicex-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.dicex-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+}
+
+.dicex-pill {
+  display: inline-block;
+  min-width: 28px;
+  text-align: center;
+  padding: 3px 6px;
+  border: 2px solid var(--dicex-edge);
+  background: var(--dicex-pill-bg);
+  font-weight: bold;
+}
+
+.dicex-roller.dicex-theme-arcane .dicex-pill {
+  background: #e6d3a6;
+}
+
+.dicex-pill.dicex-kept {
+  border-color: var(--dicex-good);
+  color: var(--dicex-good);
+}
+
+.dicex-pill.dicex-dropped {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
+.dicex-expression {
+  font-size: 12px;
+  color: var(--dicex-muted);
+  letter-spacing: 1px;
+}
+
+/* compact / modal sizing */
+.dicex-roller[data-size="sm"] {
+  --dicex-stage-h: 200px;
+}
+
+.dicex-roller[data-size="lg"] {
+  --dicex-stage-h: 440px;
+}
+
+/* ---- 2D engine --------------------------------------------------------------
+ * Same component, no WebGL/Rapier. The stage becomes a flex tray of pixel-art
+ * dice. Each die's canvas draws its real polyhedral silhouette (triangle /
+ * diamond / hexagon…) with its own fill + border, so the wrapper stays
+ * transparent and only adds a drop-shadow for depth. */
+.dicex-engine-2d .dicex-stage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  align-content: center;
+  gap: 14px;
+  padding: 14px;
+}
+
+.dicex-die2d {
+  width: 72px;
+  height: 72px;
+  image-rendering: pixelated;
+  filter: drop-shadow(3px 3px 0 #00000055);
+  animation: dicex-drop-2d 160ms ease-out;
+}
+
+.dicex-die2d-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.dicex-die2d.dicex-dropped {
+  opacity: 0.32;
+  filter: saturate(0.35) drop-shadow(3px 3px 0 #00000055);
+}
+
+@keyframes dicex-drop-2d {
+  0% { transform: translateY(-10px) scale(0.9); }
+  100% { transform: translateY(0) scale(1); }
+}
