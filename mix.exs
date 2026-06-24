@@ -22,7 +22,11 @@ defmodule DicEx.MixProject do
       docs: docs(),
       source_url: @source_url,
       elixirc_paths: elixirc_paths(Mix.env()),
-      aliases: aliases()
+      aliases: aliases(),
+      dialyzer: [
+        ignore_warnings: ".dialyzer_ignore.exs",
+        list_unused_filters: true
+      ]
     ]
   end
 
@@ -41,7 +45,8 @@ defmodule DicEx.MixProject do
       {:phoenix_html, "~> 4.0", optional: true},
       {:jason, "~> 1.0", optional: true},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
-      {:credo, "~> 1.7", only: :dev, runtime: false}
+      {:credo, "~> 1.7", only: :dev, runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
   end
 

@@ -1,58 +1,10 @@
 defmodule DicEx do
-  @moduledoc """
-  Pixel-art 3D dice roller. The roll itself is computed authoritatively in
-  Elixir; the optional LiveView component (`DicExWeb.DiceRoller`) visualises
-  the result with Three.js + Rapier physics.
-
-  ## Quick start
-
-      iex> DicEx.roll("1d20")
-      %DicEx.Result{total: 14, ...}
-
-      iex> DicEx.roll("3d6 + 2")
-      %DicEx.Result{total: 13, ...}
-
-      iex> DicEx.roll("2d20kh1")      # advantage — keep highest
-      %DicEx.Result{...}
-
-      iex> DicEx.roll("4d6dl1")       # 4d6, drop lowest (ability score)
-      %DicEx.Result{...}
-
-      iex> DicEx.roll("8d6!")         # explode (Sneak Attack / fire)
-      %DicEx.Result{...}
-
-      iex> DicEx.roll("1d20r1")       # reroll natural 1s
-      %DicEx.Result{...}
-
-  ## Notation
-
-  | Token        | Meaning                                   |
-  | ------------ | ----------------------------------------- |
-  | `NdS`        | Roll `N` dice with `S` sides (d4..d100)   |
-  | `kh[n]`      | Keep highest `n` (advantage)              |
-  | `kl[n]`      | Keep lowest `n` (disadvantage)            |
-  | `dh[n]`      | Drop highest `n`                          |
-  | `dl[n]`      | Drop lowest `n`                           |
-  | `!` / `!p`   | Explode / explode & penetrate             |
-  | `r<op>n`     | Reroll (`< <= = >= >`), append `o` for once |
-  | `+` / `-`    | Add / subtract modifiers or pools         |
-
-  ## Reproducible rolls (tests, replays, anti-cheat)
-
-  Seed the default RNG for a reproducible sequence:
-
-      DicEx.roll("2d20kh1", seed: 42)
-
-  Or thread an explicit RNG module/tuple via the lower-level `roll/2` second
-  argument.
-
-  > #### A note on `:seed` {: .warning}
-  > `:seed` reseeds the *calling process's* `:rand` state to produce a
-  > reproducible sequence. The prior state is not restored, so in a long-lived
-  > process (e.g. a LiveView) a later unseeded `roll/2` continues the seeded
-  > sequence rather than drawing fresh entropy. Thread `:rng` explicitly when
-  > you need isolation, or re-seed per request.
-  """
+  readme = Path.expand("../README.md", __DIR__)
+  @external_resource readme
+  @moduledoc readme
+             |> File.read!()
+             |> String.split("<!-- MDOC -->")
+             |> Enum.fetch!(1)
 
   alias DicEx.{Parser, Result, RNG, Roller}
 

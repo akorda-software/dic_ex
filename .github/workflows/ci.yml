@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint (format + credo)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "29"
+          elixir-version: "1.20.0"
+      - name: Install dependencies
+        run: mix deps.get
+      - name: Compile (warnings as errors)
+        run: mix compile --warnings-as-errors
+      - name: Check formatting
+        run: mix format --check-formatted
+      - name: Lint (credo)
+        run: mix credo
+
+  test:
+    name: Test (Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }})
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Lowest supported by the package (~> 1.17 in mix.exs)
+          - elixir: "1.17.3"
+            otp: "27"
+          # Latest
+          - elixir: "1.20.0"
+            otp: "29"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
+          elixir-version: ${{ matrix.elixir }}
+      - name: Install dependencies
+        run: mix deps.get
+      - name: Restore deps & build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('mix.exs') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-
+      - name: Compile (warnings as errors)
+        run: mix compile --warnings-as-errors
+      - name: Run tests
+        run: mix test
+
+  dialyzer:
+    name: Type check (dialyzer)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "29"
+          elixir-version: "1.20.0"
+      - name: Install dependencies
+        run: mix deps.get
+      - name: Restore PLT cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            _build/dev/*.plt
+            _build/dev/*.plt.lock
+          key: plt-${{ runner.os }}-1.20.0-29-${{ hashFiles('mix.exs') }}
+          restore-keys: |
+            plt-${{ runner.os }}-1.20.0-29-
+      - name: Run dialyzer
+        run: mix dialyzer

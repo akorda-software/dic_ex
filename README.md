@@ -1,21 +1,34 @@
-# dicEx
+<p align="center">
+  <strong>dicEx</strong><br/>
+  Pixel-art 3D dice roller for Phoenix LiveView
+</p>
 
-<p align="center"><strong>Pixel-art 3D dice roller for Phoenix LiveView</strong></p>
+<p align="center">
+  <a href="https://github.com/kukapu/dic_ex/actions/workflows/ci.yml"><img src="https://github.com/kukapu/dic_ex/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+  <a href="https://hex.pm/packages/dic_ex"><img src="https://img.shields.io/hexpm/v/dic_ex.svg" alt="Hex.pm"/></a>
+  <a href="https://hexdocs.pm/dic_ex"><img src="https://img.shields.io/badge/documentation-gray" alt="Documentation"/></a>
+  <a href="https://github.com/kukapu/dic_ex/blob/main/LICENSE"><img src="https://img.shields.io/hexpm/l/dic_ex.svg" alt="License"/></a>
+</p>
 
-`dicEx` computes D&D-style dice rolls in pure Elixir and pairs them with a
-Three.js + Rapier physics visualization that drops into any LiveView as a
-component or modal. The rolls are seedable and testable; the tumbling dice are
-theatre that settle naturally without a post-roll correction spin.
+> D&D-style dice rolls in pure Elixir, with an optional Three.js + Rapier 3D
+> visualization that drops into any LiveView.
 
-Two reveal modes, both computed through Elixir so modifiers always apply:
+`dicEx` computes dice rolls (advantage, drop/keep, explode, reroll) in Elixir so
+modifiers always apply and results are seedable and testable. The tumbling 3D
+dice are theatre — or, in the physics-is-truth 3D engine, exactly what happened.
+The **core has zero runtime dependencies**; the LiveView component is opt-in.
 
-- **2D engine** — the server roll is the source of truth; the visible tumble
-  lands exactly on the value Elixir decided.
-- **3D engine** — *physics is truth*: the dice land where Rapier takes them and
-  the landed faces are reported back, so what you see is what happened.
+Two reveal modes, both computed through Elixir:
+
+- **2D engine** — the server roll is the source of truth; the tumble lands on the
+  value Elixir decided.
+- **3D engine** — *physics is truth*: dice land where Rapier takes them and the
+  landed faces are reported back, so what you see is what happened.
 
 ## Features
 
+- **Zero runtime dependencies** for the core — `phoenix_live_view` (+ `jason`) are
+  optional and only needed for the component.
 - **Full dice notation** — `3d6`, `2d20kh1` (advantage), `4d6dl1` (ability
   scores), `8d6!` (explode), `1d20r1` (reroll), `1d20+5`.
 - **Deterministic & seedable** — replay rolls, anti-cheat, golden-path tests.
@@ -23,16 +36,15 @@ Two reveal modes, both computed through Elixir so modifiers always apply:
   flags, and a JSON-friendly `to_map/1` for LLM consumption.
 - **3D pixel-art dice** — low-poly d4/d6/d8/d10/d12/d20 with procedurally drawn
   bitmap-font textures and real Rapier physics.
-- **Drop-in LiveView component** — inline or modal, themed (`obsidian` / `arcane` / `dnd`).
-- **No web dependency required for the core** — `phoenix_live_view` (+ `jason`)
-  are optional; only needed for the component.
+- **Drop-in LiveView component** — inline or modal, themed
+  (`obsidian` / `arcane` / `dnd`).
 
 ## Installation
 
 Add `dic_ex` to your `mix.exs`:
 
 ```elixir
-def deps do
+defp deps do
   [
     {:dic_ex, "~> 0.1.0"}
   ]
@@ -43,10 +55,17 @@ Then:
 
 ```bash
 mix deps.get
-mix dic_ex.install   # copies dic_ex.min.js -> assets/vendor, dic_ex.css -> assets/css
 ```
 
-## Core usage (pure Elixir)
+> **Try it in a Livebook** with no project at all — the core needs no Phoenix:
+> ```elixir
+> Mix.install([{:dic_ex, "~> 0.1.0"}])
+> DicEx.roll("2d20kh1 + 5")
+> ```
+
+<!-- MDOC -->
+
+## Quick start
 
 ```elixir
 DicEx.roll("1d20")           # => %DicEx.Result{total: 14, ...}
@@ -66,6 +85,39 @@ DicEx.roll_dice(2, 20, mod: 5, advantage: true)
 DicEx.roll("4d6", seed: 42)
 ```
 
+### Notation reference
+
+| Token      | Meaning                                            |
+| ---------- | -------------------------------------------------- |
+| `NdS`      | Roll `N` dice of `S` sides (d4..d100)              |
+| `kh[n]`    | Keep highest `n` (advantage)                       |
+| `kl[n]`    | Keep lowest `n` (disadvantage)                     |
+| `dh[n]`    | Drop highest `n`                                   |
+| `dl[n]`    | Drop lowest `n`                                    |
+| `!` / `!p` | Explode / explode & penetrate                      |
+| `r<op>n`   | Reroll (`< <= = >= >`); `ro` rerolls once          |
+| `+` / `-`  | Add / subtract pools or modifiers                  |
+
+Only `+`/`-` compose — there's no `*`, `/`, or parentheses.
+
+### Reproducible rolls
+
+Seed the default RNG for a reproducible sequence — useful for tests, replays,
+and anti-cheat:
+
+```elixir
+DicEx.roll("2d20kh1", seed: 42)
+```
+
+> #### A note on `:seed` {: .warning}
+> `:seed` reseeds the *calling process's* `:rand` state to produce a
+> reproducible sequence. The prior state is not restored, so in a long-lived
+> process (e.g. a LiveView) a later unseeded `roll/2` continues the seeded
+> sequence rather than drawing fresh entropy. Thread `:rng` explicitly when you
+> need isolation, or re-seed per request.
+
+<!-- MDOC -->
+
 ### Structured result
 
 ```elixir
@@ -74,7 +126,8 @@ DicEx.roll("4d6", seed: 42)
   total: 23,
   groups: [
     %{kind: :dice, notation: nil, sides: 20, subtotal: 18, modifiers: [{:keep_high, 1}],
-      rolls: [%{value: 18, kept: true, exploded: false}, %{value: 7, kept: false, exploded: false}]},
+      rolls: [%{value: 18, kept: true, exploded: false},
+              %{value: 7,  kept: false, exploded: false}]},
     %{kind: :modifier, notation: nil, sides: nil, subtotal: 5, modifiers: [], rolls: []}
   ]
 }
@@ -85,45 +138,39 @@ DicEx.Result.to_map(result)   # JSON-ready map for your LLM / client
 The per-group `notation` is left `nil`; the full expression lives on the
 top-level `expression` field.
 
-### Notation reference
+## Phoenix LiveView component (optional)
 
-| Token       | Meaning                                       |
-| ----------- | --------------------------------------------- |
-| `NdS`       | Roll `N` dice of `S` sides (d4..d100)         |
-| `kh[n]`     | Keep highest `n` (advantage)                  |
-| `kl[n]`     | Keep lowest `n` (disadvantage)                |
-| `dh[n]`     | Drop highest `n`                              |
-| `dl[n]`     | Drop lowest `n`                               |
-| `!` / `!p`  | Explode / explode & penetrate                 |
-| `r<op>n`    | Reroll (`< <= = >= >`); `ro` rerolls once      |
-| `+` / `-`   | Add / subtract pools or modifiers             |
+The 3D dice are an opt-in layer on top of the pure-Elixir core. It needs
+`phoenix_live_view` and `jason` (both `optional: true` in `dic_ex`), and ships
+prebuilt assets you import into your bundle.
 
-## LiveView component
+1. Import the assets (Phoenix 1.8+ only serves `app.js` / `app.css`, so dicEx is
+   vendored, not referenced via external `<script>` tags):
 
-1. Import the assets into your bundle (Phoenix 1.8+ only serves `app.js` /
-   `app.css`, so dicEx ships as vendored imports, not external tags):
+   ```bash
+   mix dic_ex.install   # copies dic_ex.min.js -> assets/vendor, dic_ex.css -> assets/css
+   ```
 
-```js
-// assets/js/app.js
-import "../vendor/dic_ex.min.js"        // sets window.DicExHooks
+2. Wire the bundle:
 
-const hooks = { ...(window.DicExHooks || {}) }
-const liveSocket = new LiveSocket("/live", Socket, { hooks, /* ... */ })
-```
+   ```js
+   // assets/js/app.js
+   import "../vendor/dic_ex.min.js"        // sets window.DicExHooks
 
-```css
-/* assets/css/app.css — after the tailwind import */
-@import "./dic_ex.css";
-```
+   const hooks = { ...(window.DicExHooks || {}) }
+   const liveSocket = new LiveSocket("/live", Socket, { hooks, /* ... */ })
+   ```
 
-`mix dic_ex.install` copies `dic_ex.min.js` → `assets/vendor/` and
-`dic_ex.css` → `assets/css/` and prints the exact wiring.
+   ```css
+   /* assets/css/app.css — after the tailwind import */
+   @import "./dic_ex.css";
+   ```
 
-2. Drop the component anywhere — inline or in a modal:
+3. Drop the component anywhere — inline or in a modal:
 
-```heex
-<.live_component module={DicExWeb.DiceRoller} id="dice-roller" />
-```
+   ```heex
+   <.live_component module={DicExWeb.DiceRoller} id="dice-roller" />
+   ```
 
 ### Receiving rolls
 
@@ -143,22 +190,23 @@ end
 
 | Option     | Default      | Description                                              |
 | ---------- | ------------ | -------------------------------------------------------- |
-| `:default` | `"1d20"`     | Initial expression                                        |
+| `:default` | `"1d20"`     | Initial expression                                       |
 | `:theme`   | `"obsidian"` | `"obsidian"`, `"arcane"` or `"dnd"`, or a custom palette |
 | `:engine`  | `"3d"`       | `"3d"` (Three.js + Rapier) or `"2d"` (canvas, no physics) |
-| `:rng`     | `nil`        | RNG module; `nil` ⇒ `DicEx.RNG.Default` (seedable)        |
+| `:rng`     | `nil`        | RNG module; `nil` ⇒ `DicEx.RNG.Default` (seedable)       |
 | `:on_roll` | `nil`        | `pid` / registered name to receive `{:dic_ex_rolled, _}`   |
 
 ## Building assets from source
 
-The package ships prebuilt assets. To rebuild after editing `assets/src`:
+The package ships prebuilt assets. To rebuild after editing `assets/src/`:
 
 ```bash
 mix dic_ex.build     # bundles Three.js + Rapier -> priv/static/dic_ex.min.js
 ```
 
 Requires Node.js + a JS package manager (pnpm/bun/npm; the build task installs
-deps automatically on first run).
+deps automatically on first run). See [CONTRIBUTING.md](./CONTRIBUTING.md) for
+the full development and release workflow.
 
 ## Architecture
 
@@ -174,11 +222,21 @@ dic_ex/
 
 The roll is computed through Elixir for both engines. The 2D hook receives the
 server result via `push_event("dic_ex:roll", ...)`, tumbles the dice, and reveals
-it in sync. The 3D hook throws the dice physically and, once they settle,
-reports the landed faces back (`dic_ex:landed`) so Elixir recomputes the result
-around the physics outcome — modifiers (kh/dl/explode…) still apply, and the
-revealed total matches exactly what landed on the table.
+it in sync. The 3D hook throws the dice physically and, once they settle, reports
+the landed faces back (`dic_ex:landed`) so Elixir recomputes the result around
+the physics outcome — modifiers (kh/dl/explode…) still apply, and the revealed
+total matches exactly what landed on the table.
+
+## Documentation
+
+Full API docs are at [hexdocs.pm/dic_ex](https://hexdocs.pm/dic_ex).
+
+## Contributing
+
+Development setup, quality gates, and the release/publish workflow live in
+[CONTRIBUTING.md](./CONTRIBUTING.md). Bug reports and pull requests are welcome
+at [github.com/kukapu/dic_ex](https://github.com/kukapu/dic_ex).
 
 ## License
 
-MIT
+Copyright (c) 2026 kukapu. Released under the [MIT License](./LICENSE).
