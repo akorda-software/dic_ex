@@ -1,7 +1,7 @@
 defmodule DicEx.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.2.0"
   @source_url "https://github.com/kukapu/dic_ex"
   @description """
   Pixel-art 3D dice roller for Phoenix LiveView. Authoritative rolls in Elixir

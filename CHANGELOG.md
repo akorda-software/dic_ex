@@ -7,11 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-24
+
 ### Changed
 - 3D dice now stop exactly where Rapier physics leaves them instead of rotating
   after settling to face the authoritative value.
 - Removed the undocumented `!!` (compound explode) token: it parsed but behaved
   identically to `!`. Standard (`!`) and penetrate (`!p`) are unaffected.
+- Documentation overhaul: README restructured to match common Hex package
+  conventions; the `DicEx` module docs are now generated from it (single source).
 
 ### Fixed
 - Multi-pool subtraction now applies its sign to every right-hand group and
