@@ -3,10 +3,13 @@ name: Publish to Hex
 # Publishing a GitHub release (tag `v<version>`) publishes that version to Hex,
 # docs included. Needs the `HEX_API_KEY` repository secret
 # (`mix hex.user key generate --key-name github-actions --permission api:write`).
+# Run it manually (Actions → Publish to Hex → Run workflow) for a dry run: same
+# checks plus `mix hex.build`, nothing is uploaded.
 
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,13 +20,13 @@ concurrency:
 
 jobs:
   publish:
-    name: Publish ${{ github.event.release.tag_name }}
+    name: ${{ github.event_name == 'release' && format('Publish {0}', github.event.release.tag_name) || 'Dry run' }}
     runs-on: ubuntu-22.04
     environment: hex
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || github.ref }}
 
       - uses: erlef/setup-beam@v1
         with:
@@ -31,6 +34,7 @@ jobs:
           elixir-version: "1.20.0"
 
       - name: Tag, mix.exs and CHANGELOG agree on the version
+        if: github.event_name == 'release'
         env:
           TAG: ${{ github.event.release.tag_name }}
         run: |
@@ -54,7 +58,12 @@ jobs:
           mix format --check-formatted
           mix test
 
+      - name: Build package (dry run)
+        if: github.event_name != 'release'
+        run: mix hex.build && mix docs
+
       - name: Publish package and docs
+        if: github.event_name == 'release'
         env:
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
         run: mix hex.publish --yes

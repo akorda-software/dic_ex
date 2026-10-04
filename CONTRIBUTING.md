@@ -98,7 +98,9 @@ version lives in three places that must agree — `mix.exs` (`@version`, line 4)
    ```bash
    mix hex.user key generate --key-name github-actions --permission api:write
    ```
-   Then `mix hex.info dic_ex` to confirm.
+   Then `mix hex.info dic_ex` to confirm. To rehearse without publishing, run
+   the workflow manually (`gh workflow run publish.yml`): it runs the same
+   gates plus `mix hex.build` and `mix docs`, and uploads nothing.
 
 Release gotchas:
 
