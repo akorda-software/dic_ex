@@ -53,7 +53,7 @@ Add `dic_ex` to your `mix.exs`:
 ```elixir
 defp deps do
   [
-    {:dic_ex, "~> 0.2"}
+    {:dic_ex, "~> 0.3"}
   ]
 end
 ```
@@ -66,7 +66,7 @@ mix deps.get
 
 > **Try it in a Livebook** with no project at all — the core needs no Phoenix:
 > ```elixir
-> Mix.install([{:dic_ex, "~> 0.2"}])
+> Mix.install([{:dic_ex, "~> 0.3"}])
 > DicEx.roll("2d20kh1 + 5")
 > ```
 
