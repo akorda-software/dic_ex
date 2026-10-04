@@ -43,7 +43,8 @@ const DiceRoller2DHook = {
   // or a built-in name). Falls back to "obsidian" if absent.
   _readPalette() {
     const raw = this.el.dataset.palette
-    return raw ? JSON.parse(raw) : "obsidian"
+    try { return raw ? JSON.parse(raw) : "obsidian" }
+    catch { return "obsidian" }
   },
 
   // Static dice placed on the stage before the first roll so it's never empty.
@@ -100,6 +101,8 @@ const DiceRoller2DHook = {
   _roll(payload) {
     this._stopTumble()
     this._clearStage()
+    delete this.el.dataset.error
+    this._nonce = payload.nonce
 
     const dice = []
     for (const group of payload.groups || []) {
@@ -148,7 +151,8 @@ const DiceRoller2DHook = {
       this._raf = null
       this._tumble = null
       // tell the LiveComponent every die has stopped -> reveal the result
-      this.pushEventTo(this.el, `dic_ex:settled:${this._id}`, {})
+      // the nonce lets the server ignore a report from a superseded roll
+      this.pushEventTo(this.el, `dic_ex:settled:${this._id}`, { nonce: this._nonce })
       return
     }
     this._raf = requestAnimationFrame(this._boundTick)

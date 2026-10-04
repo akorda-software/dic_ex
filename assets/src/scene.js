@@ -54,7 +54,10 @@ const PHYSICS = {
 const SETTLE = {
   linSpeed: 0.05, // m/s — below this a die is linearly at rest
   angSpeed: 0.2, // rad/s — below this a die is angularly at rest
-  time: 0.12 // seconds of continuous rest before locking
+  time: 0.12, // seconds of continuous rest before locking
+  // Hard cap per die: one balanced on an edge or sliding forever is locked
+  // where it is so the roll always finishes (and reports) in bounded time.
+  maxTime: 4.5
 }
 
 const TABLE = {
@@ -123,11 +126,19 @@ export class DiceScene {
     this._expectSettle = false
     this._settleReported = false
 
-    this._initRenderer(canvas)
-    this._initScene()
-    this._initLights()
-    this._initPhysics()
-    this._loop = this._loop.bind(this)
+    try {
+      this._initRenderer(canvas)
+      this._initScene()
+      this._initLights()
+      this._initPhysics()
+      this._loop = this._loop.bind(this)
+    } catch (error) {
+      // A throwing constructor never reaches the hook's `_scene` assignment.
+      // Release resources owned so far before the hook recovers to 2D, and
+      // preserve the initialization error even if cleanup itself fails.
+      try { this.dispose() }
+      finally { throw error }
+    }
   }
 
   setTheme(theme) {
@@ -299,7 +310,7 @@ export class DiceScene {
   }
 
   // `dice` is [{ sides, value, kept }] — one entry per die to show.
-  spawnRoll(dice) {
+  spawnRoll(dice, { authoritative = false } = {}) {
     this.clear()
     const THREE = this.THREE
     this._expectSettle = true
@@ -328,9 +339,12 @@ export class DiceScene {
         settled: false,
         restTime: 0,
         faces: built.faces,
+        value: entry.value,
+        finalQuaternion: authoritative ? built.quaternionForValue(entry.value) : null,
         readDown: entry.sides === 4
       })
     })
+    this.start()
   }
 
   _makeBody(built, index, total) {
@@ -391,15 +405,25 @@ export class DiceScene {
     if (!this.canvas) return
     const w = this.canvas.clientWidth
     const h = this.canvas.clientHeight
+    if (w <= 0 || h <= 0) {
+      this.stop()
+      return
+    }
     this.renderer.setSize(w, h, false)
     if (this.camera) {
       this.camera.aspect = w / Math.max(1, h)
       this.camera.updateProjectionMatrix()
     }
+    if (this.scene && this.camera) {
+      this.renderer.render(this.scene, this.camera)
+      this.start()
+    }
   }
 
   start() {
-    if (this._raf) return
+    if (this._disposed || this._raf || document.hidden ||
+        !this.canvas.clientWidth || !this.canvas.clientHeight ||
+        !this.dice.some(d => !d.settled)) return
     this.clock.start()
     this._raf = requestAnimationFrame(this._loop)
   }
@@ -410,27 +434,36 @@ export class DiceScene {
   }
 
   dispose() {
+    if (this._disposed) return
+    this._disposed = true
     this.stop()
-    this.clear()
-    this._disposeMesh(this._platform)
-    if (this._grid) {
-      this.scene.remove(this._grid)
-      this._grid.geometry?.dispose()
-      this._grid.material?.dispose()
+    // One failing release must not prevent freeing the context or physics.
+    const errors = []
+    for (const release of [
+      () => this.clear(),
+      () => this._disposeMesh(this._platform),
+      () => this._disposeMesh(this._grid),
+      () => this.renderer?.dispose(),
+      // Release GPU memory before the canvas is eventually garbage collected.
+      () => this.renderer?.forceContextLoss?.(),
+      () => this.world?.free()
+    ]) {
+      try { release() }
+      catch (error) { errors.push(error) }
     }
     this.scene = null
-    this.renderer.dispose()
-    // Release the WebGL context promptly so GPU memory is reclaimed now, not
-    // when the canvas is eventually GC'd.
-    this.renderer.forceContextLoss?.()
+    this.world = null
+    if (errors.length) throw errors[0]
   }
 
   _loop() {
-    this._raf = requestAnimationFrame(this._loop)
+    this._raf = null
+    if (this._disposed || document.hidden || !this.canvas.clientWidth || !this.canvas.clientHeight) return
     const dt = Math.min(this.clock.getDelta(), 1 / 30)
     this._stepPhysics(dt)
     this._syncMeshes(dt)
     this.renderer.render(this.scene, this.camera)
+    if (this.dice.some(d => !d.settled)) this._raf = requestAnimationFrame(this._loop)
   }
 
   // Fixed-timestep integration with an accumulator: the world always advances
@@ -480,6 +513,9 @@ export class DiceScene {
   }
 
   _maybeSettle(d, dt) {
+    d.age = (d.age || 0) + dt
+    if (d.age >= SETTLE.maxTime) return this._lockAtRest(d)
+
     const lv = d.body.linvel()
     const av = d.body.angvel()
     const lin = Math.hypot(lv.x, lv.y, lv.z)
@@ -495,6 +531,10 @@ export class DiceScene {
 
   _lockAtRest(d) {
     d.settled = true
+    if (d.finalQuaternion) {
+      d.mesh.quaternion.copy(d.finalQuaternion)
+      d.body.setRotation(d.finalQuaternion, false)
+    }
     // freeze the body so it no longer jitters after the physical roll ends
     d.body.setLinvel({ x: 0, y: 0, z: 0 }, true)
     d.body.setAngvel({ x: 0, y: 0, z: 0 }, true)
@@ -512,6 +552,7 @@ export class DiceScene {
     const wc = new THREE.Vector3()
 
     return this.dice.map((d) => {
+      if (d.finalQuaternion) return d.value
       if (!d.faces || d.faces.length === 0) return 1
       // Resolve the landed face by world-space centroid height (lowest for a
       // d4, which reads its resting/bottom face). The centroid is winding-

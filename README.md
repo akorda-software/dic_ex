@@ -14,23 +14,30 @@
 > visualization that drops into any LiveView.
 
 `dicEx` computes dice rolls (advantage, drop/keep, explode, reroll) in Elixir so
-modifiers always apply and results are seedable and testable. The tumbling 3D
-dice are theatre — or, in the physics-is-truth 3D engine, exactly what happened.
+modifiers always apply and results are seedable and testable. The tumbling dice
+are theatre: the server decides, the dice land on what it decided.
 The **core has zero runtime dependencies**; the LiveView component is opt-in.
 
-Two reveal modes, both computed through Elixir:
+The component supports these reveal modes:
 
-- **2D engine** — the server roll is the source of truth; the tumble lands on the
-  value Elixir decided.
-- **3D engine** — *physics is truth*: dice land where Rapier takes them and the
-  landed faces are reported back, so what you see is what happened.
+- **2D engine** — the tumble lands on the value Elixir decided.
+- **3D engine** (default) — dice tumble with real Rapier physics and settle on
+  the faces Elixir decided. Dice the 3D engine can't show exactly (d100, d7…)
+  are shown in 2D for that roll.
+- **Physics-is-truth 3D** (opt-in, `physics={true}`) — dice land where Rapier
+  takes them and the landed faces become the result. The browser decides the
+  outcome, so a player can cheat; use it only where that is acceptable. It
+  applies to d4/d6/d8/d10/d12/d20 pools without explode/reroll; other rolls
+  stay server-decided.
 
 ## Features
 
 - **Zero runtime dependencies** for the core — `phoenix_live_view` (+ `jason`) are
   optional and only needed for the component.
 - **Full dice notation** — `3d6`, `2d20kh1` (advantage), `4d6dl1` (ability
-  scores), `8d6!` (explode), `1d20r1` (reroll), `1d20+5`.
+  scores), `8d6!` (explode), `1d20r1` (reroll), `d%` (percentile), `1d20+5`.
+- **Safe on untrusted input** — bounded dice count, sides and length;
+  never-ending modifiers (`1d6r<=6`, `1d1!`) are rejected.
 - **Deterministic & seedable** — replay rolls, anti-cheat, golden-path tests.
 - **Structured results** — `%DicEx.Result{}` with per-die outcomes, kept/dropped
   flags, and a JSON-friendly `to_map/1` for LLM consumption.
@@ -46,7 +53,7 @@ Add `dic_ex` to your `mix.exs`:
 ```elixir
 defp deps do
   [
-    {:dic_ex, "~> 0.1.0"}
+    {:dic_ex, "~> 0.2"}
   ]
 end
 ```
@@ -59,7 +66,7 @@ mix deps.get
 
 > **Try it in a Livebook** with no project at all — the core needs no Phoenix:
 > ```elixir
-> Mix.install([{:dic_ex, "~> 0.1.0"}])
+> Mix.install([{:dic_ex, "~> 0.2"}])
 > DicEx.roll("2d20kh1 + 5")
 > ```
 
@@ -89,7 +96,8 @@ DicEx.roll("4d6", seed: 42)
 
 | Token      | Meaning                                            |
 | ---------- | -------------------------------------------------- |
-| `NdS`      | Roll `N` dice of `S` sides (d4..d100)              |
+| `NdS`      | Roll `N` dice of `S` sides (`dS` = `1dS`)          |
+| `d%`       | Percentile die (`d100`)                            |
 | `kh[n]`    | Keep highest `n` (advantage)                       |
 | `kl[n]`    | Keep lowest `n` (disadvantage)                     |
 | `dh[n]`    | Drop highest `n`                                   |
@@ -98,23 +106,32 @@ DicEx.roll("4d6", seed: 42)
 | `r<op>n`   | Reroll (`< <= = >= >`); `ro` rerolls once          |
 | `+` / `-`  | Add / subtract pools or modifiers                  |
 
-Only `+`/`-` compose — there's no `*`, `/`, or parentheses.
+Only `+`/`-` compose — there's no `*`, `/`, or parentheses. A leading sign
+applies to the first term (`-1d4+5`). One reroll modifier per pool.
+
+### Limits
+
+Expressions are bounded so untrusted input can't exhaust the process: at most
+100 dice in total, 1000 sides per die and 256 characters. Override per call:
+
+```elixir
+DicEx.roll_e("150d6", max_dice: 200, max_sides: 1000, max_length: 256)
+```
+
+A repeating reroll that matches every face (`1d6r<=6`) and exploding a d1 are
+rejected, since they would never finish.
 
 ### Reproducible rolls
 
-Seed the default RNG for a reproducible sequence — useful for tests, replays,
-and anti-cheat:
+Pass a seed for a reproducible sequence — useful for tests, replays, and
+anti-cheat audits:
 
 ```elixir
 DicEx.roll("2d20kh1", seed: 42)
 ```
 
-> #### A note on `:seed` {: .warning}
-> `:seed` reseeds the *calling process's* `:rand` state to produce a
-> reproducible sequence. The prior state is not restored, so in a long-lived
-> process (e.g. a LiveView) a later unseeded `roll/2` continues the seeded
-> sequence rather than drawing fresh entropy. Thread `:rng` explicitly when you
-> need isolation, or re-seed per request.
+The seeded state is private to the call (`DicEx.RNG.Seeded`); the calling
+process's `:rand` state is left untouched.
 
 <!-- MDOC -->
 
@@ -148,14 +165,16 @@ prebuilt assets you import into your bundle.
    vendored, not referenced via external `<script>` tags):
 
    ```bash
-   mix dic_ex.install   # copies dic_ex.min.js -> assets/vendor, dic_ex.css -> assets/css
+   mix dic_ex.install   # copies the JS bundles -> assets/vendor, dic_ex.css -> assets/css
    ```
 
 2. Wire the bundle:
 
    ```js
    // assets/js/app.js
-   import "../vendor/dic_ex.min.js"        // sets window.DicExHooks
+   import "../vendor/dic_ex.min.js"        // sets window.DicExHooks (2D + 3D, ~2.7 MB)
+   // or, if every roller uses engine="2d", the lightweight bundle:
+   // import "../vendor/dic_ex_2d.min.js"  // 2D only, a few KB
 
    const hooks = { ...(window.DicExHooks || {}) }
    const liveSocket = new LiveSocket("/live", Socket, { hooks, /* ... */ })
@@ -186,27 +205,63 @@ def handle_info({:dic_ex_rolled, %{result: result, component: id}}, socket) do
 end
 ```
 
-### Options
+### Host-owned results
 
-| Option     | Default      | Description                                              |
-| ---------- | ------------ | -------------------------------------------------------- |
-| `:default` | `"1d20"`     | Initial expression                                       |
-| `:theme`   | `"obsidian"` | `"obsidian"`, `"arcane"` or `"dnd"`, or a custom palette |
-| `:engine`  | `"3d"`       | `"3d"` (Three.js + Rapier) or `"2d"` (canvas, no physics) |
-| `:rng`     | `nil`        | RNG module; `nil` ⇒ `DicEx.RNG.Default` (seedable)       |
-| `:on_roll` | `nil`        | `pid` / registered name to receive `{:dic_ex_rolled, _}`   |
+To animate a result your own code already decided, push it to the roller's
+hook directly (here the component's DOM id is `spell-stage`):
+
+```elixir
+push_event(socket, "dic_ex:roll:spell-stage", %{
+  groups: [%{sides: 4, rolls: [%{value: 3, kept: true}]}], authoritative: true
+})
+```
+
+`dic_ex:landed:spell-stage` then reports the supplied values; treat it as a
+"settled" signal, never as a replacement for your committed result.
+d4/d6/d8/d10/d12/d20 use 3D; other sides reveal the exact value in 2D for that
+roll. `DicEx.renderer_capabilities/0` returns `%{authoritative_3d: true}` so
+hosts can feature-detect it across versions.
+
+### Component options
+
+| Option            | Default      | Description                                                   |
+| ----------------- | ------------ | ------------------------------------------------------------- |
+| `:default`        | `"1d20"`     | Initial expression (re-applied only when it changes)          |
+| `:theme`          | `"obsidian"` | `"obsidian"`, `"arcane"` or `"dnd"`, or a custom palette map  |
+| `:engine`         | `"3d"`       | `"3d"` (Three.js + Rapier) or `"2d"` (canvas, no physics)     |
+| `:physics`        | `false`      | `true` ⇒ 3D landed faces become the result (client-decided)   |
+| `:rng`            | `nil`        | RNG module or `{module, state}`; `nil` ⇒ `DicEx.RNG.Default`  |
+| `:limits`         | `[]`         | Parse limits: `max_dice`, `max_sides`, `max_length`           |
+| `:labels`         | English      | `%{add:, clear:, roll:, rolling:, placeholder:, input:}`      |
+| `:reveal_timeout` | `6000`       | ms before revealing if the dice never report settling         |
+| `:on_roll`        | `nil`        | pid, name, `{name, node}`, `{:global, _}` or `{:via, _, _}`   |
+
+For a Spanish UI, for example:
+
+```heex
+<.live_component module={DicExWeb.DiceRoller} id="roller"
+  labels={%{add: "añadir", clear: "limpiar", roll: "Tirar", rolling: "tirando…",
+            input: "Expresión de dados"}} />
+```
 
 ## Building assets from source
 
 The package ships prebuilt assets. To rebuild after editing `assets/src/`:
 
 ```bash
-mix dic_ex.build     # bundles Three.js + Rapier -> priv/static/dic_ex.min.js
+mix dic_ex.build        # -> priv/static/dic_ex.min.js and dic_ex_2d.min.js
+mix dic_ex.test_assets  # Node's built-in lifecycle and face-orientation tests
 ```
 
 Requires Node.js + a JS package manager (pnpm/bun/npm; the build task installs
 deps automatically on first run). See [CONTRIBUTING.md](./CONTRIBUTING.md) for
 the full development and release workflow.
+
+The 3D hook recovers to 2D if scene initialization fails, releasing the WebGL
+context and Rapier world it already owned; a queued roll keeps the server's
+values. Hidden or zero-sized canvases pause, settled scenes stop their
+animation loop, and a die that never comes to rest is locked after 4.5 s so a
+roll always finishes.
 
 ## Architecture
 
@@ -215,17 +270,18 @@ dic_ex/
 ├── lib/dic_ex.ex                  # public API: roll/2, roll_dice/3, format/1
 ├── lib/dic_ex/                    # core: parser, roller, dice, result, rng
 ├── lib/dic_ex_web/                # LiveView component (guarded: needs LiveView)
-├── lib/mix/tasks/                 # mix dic_ex.build, mix dic_ex.install
+├── lib/mix/tasks/                 # dic_ex.install (+ dev-only build, test_assets)
 ├── assets/src/                    # Three.js + Rapier scene, dice factory, hook
-└── priv/static/                   # prebuilt dic_ex.min.js + dic_ex.css
+└── priv/static/                   # prebuilt dic_ex.min.js, dic_ex_2d.min.js, dic_ex.css
 ```
 
-The roll is computed through Elixir for both engines. The 2D hook receives the
-server result via `push_event("dic_ex:roll", ...)`, tumbles the dice, and reveals
-it in sync. The 3D hook throws the dice physically and, once they settle, reports
-the landed faces back (`dic_ex:landed`) so Elixir recomputes the result around
-the physics outcome — modifiers (kh/dl/explode…) still apply, and the revealed
-total matches exactly what landed on the table.
+The roll is computed in Elixir for both engines. The component pushes the
+result to its hook (`dic_ex:roll:<id>`, tagged with a nonce); the hook animates
+it and reports back (`dic_ex:settled:<id>` / `dic_ex:landed:<id>`) so the result
+is revealed in sync, with a server-side timer as a fallback. Reports from a
+superseded roll are ignored. In physics mode the landed faces are validated
+(count and range) and Elixir recomputes the result around them so keep/drop
+still apply; invalid reports fall back to the server's own roll.
 
 ## Documentation
 

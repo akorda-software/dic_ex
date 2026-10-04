@@ -8,8 +8,13 @@ defmodule Mix.Tasks.DicEx.Install do
 
   Phoenix 1.8+ only serves `app.js` / `app.css` from the bundle, so dicEx's
   assets must be imported rather than referenced via external `<script>` tags.
-  Run this inside your Phoenix app (e.g. dragonEx / dragonias) after adding
-  `{:dic_ex, "~> 0.1.0"}` to your dependencies.
+  Run this inside your Phoenix app after adding `:dic_ex` to your
+  dependencies. Re-run it after upgrading dicEx so the vendored JS matches the
+  component.
+
+  Two bundles are copied: `dic_ex.min.js` (both engines, ~2.7 MB because it
+  embeds Three.js and Rapier) and `dic_ex_2d.min.js` (2D engine only, a few
+  KB). Import just one of them.
   """
 
   use Mix.Task
@@ -26,6 +31,7 @@ defmodule Mix.Tasks.DicEx.Install do
 
     copies = [
       {"dic_ex.min.js", Path.join(vendor, "dic_ex.min.js")},
+      {"dic_ex_2d.min.js", Path.join(vendor, "dic_ex_2d.min.js")},
       {"dic_ex.css", Path.join(css_dir, "dic_ex.css")}
     ]
 
@@ -46,7 +52,9 @@ defmodule Mix.Tasks.DicEx.Install do
 
     1) Import the JS hook in assets/js/app.js (anywhere before LiveSocket):
 
-        import "../vendor/dic_ex.min.js"
+        import "../vendor/dic_ex.min.js"     // 2D + 3D (~2.7 MB)
+        // or, if every roller uses engine="2d":
+        // import "../vendor/dic_ex_2d.min.js" // 2D only (a few KB)
 
         // then make sure the hook reaches LiveSocket:
         const hooks = { ...(window.DicExHooks || {}) }

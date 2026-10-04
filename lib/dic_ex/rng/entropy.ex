@@ -7,8 +7,8 @@ defmodule DicEx.RNG.Entropy do
   `strong_rand_bytes` already mixes OS-level entropy (hardware timings, device
   jitter, RDRAND where available), which is strictly stronger than hand-mixing a
   clock value. Use this when you want honest, non-replayable rolls (a production
-  demo, real games); use `DicEx.RNG.Default` when you need reproducibility via a
-  fixed `:seed` (tests, replays, anti-cheat audits).
+  demo, real games); use the `:seed` option when you need reproducibility
+  (tests, replays, anti-cheat audits).
 
   Rolls are stateless and uniform over `1..sides`: rejection sampling removes
   the modulo bias a naive `rem/2` would introduce on the small dice ranges.

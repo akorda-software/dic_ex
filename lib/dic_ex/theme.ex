@@ -113,7 +113,8 @@ defmodule DicEx.Theme do
   Resolves a theme option into a complete palette map.
 
   Accepts an atom or string name of a built-in, or a custom map (merged over the
-  obsidian defaults). Always returns a full map.
+  obsidian defaults). Unknown keys and values that are not plain CSS colours
+  are ignored. Always returns a full map.
   """
   def resolve(theme)
 
@@ -123,14 +124,38 @@ defmodule DicEx.Theme do
     do: Map.merge(@defaults, Map.get(@builtins, theme, %{}))
 
   def resolve(theme) when is_map(theme) do
-    # Normalise string keys to atoms so a theme built from JSON/config
-    # (`%{"bg" => ...}`) is not silently discarded by the atom-keyed defaults.
-    normalized = Map.new(theme, fn {k, v} -> {normalize_key(k), v} end)
+    # Normalise string keys so a theme built from JSON/config (`%{"bg" => ...}`)
+    # is honoured. Only known keys and plain colour values are kept: themes may
+    # come from user input, so we never create atoms from it and never let a
+    # value break out of the inline `style` attribute (`;`, `url(...)`, ...).
+    normalized =
+      for {k, v} <- theme,
+          key = known_key(k),
+          key != nil,
+          safe_value?(v),
+          into: %{},
+          do: {key, v}
+
     Map.merge(@defaults, normalized)
   end
 
-  defp normalize_key(k) when is_atom(k), do: k
-  defp normalize_key(k) when is_binary(k), do: String.to_atom(k)
+  def resolve(_theme), do: @defaults
+
+  @keys_by_name Map.new(Map.keys(@defaults), &{Atom.to_string(&1), &1})
+
+  defp known_key(k) when is_atom(k), do: if(Map.has_key?(@defaults, k), do: k)
+  defp known_key(k) when is_binary(k), do: Map.get(@keys_by_name, k)
+  defp known_key(_), do: nil
+
+  # Hex, named colours and functional notations (`rgba(1, 2, 3, 0.5)`,
+  # `hsl(200deg 50% 40% / 80%)`, `var(--x)`) — but nothing that can inject
+  # extra declarations or load remote resources.
+  @safe_value ~r/\A[#\w\s.,%()+\-\/]{1,64}\z/
+
+  defp safe_value?(v) when is_binary(v),
+    do: Regex.match?(@safe_value, v) and not String.contains?(String.downcase(v), "url(")
+
+  defp safe_value?(_), do: false
 
   @doc """
   The CSS custom properties for the component chrome, as a keyword list of

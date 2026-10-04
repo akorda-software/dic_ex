@@ -170,7 +170,8 @@ function clusterFaces(geometry, THREE, sides) {
     // Shortest rotation bringing this face's value to the read direction. We do
     // NOT force an in-plane yaw: that would make a stopped die visibly spin on
     // itself just to "straighten" the digit. Minimal rotation only.
-    f.upQuaternion = quaternionAlign(f.normal, readTop ? topTarget : d4Target, THREE)
+    // d10 geometry has inward winding; the centroid always points outwards.
+    f.upQuaternion = quaternionAlign(f.centroid, readTop ? topTarget : d4Target, THREE)
     delete f._sum
     delete f._sumN
   }

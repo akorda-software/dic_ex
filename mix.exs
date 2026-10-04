@@ -21,7 +21,6 @@ defmodule DicEx.MixProject do
       package: package(),
       docs: docs(),
       source_url: @source_url,
-      elixirc_paths: elixirc_paths(Mix.env()),
       aliases: aliases(),
       dialyzer: [
         ignore_warnings: ".dialyzer_ignore.exs",
@@ -29,9 +28,6 @@ defmodule DicEx.MixProject do
       ]
     ]
   end
-
-  defp elixirc_paths(:test), do: ["lib", "test/support"]
-  defp elixirc_paths(_), do: ["lib"]
 
   def application do
     [
@@ -53,7 +49,10 @@ defmodule DicEx.MixProject do
   defp package do
     [
       name: "dic_ex",
-      files: ~w(lib priv/static mix.exs README.md LICENSE CHANGELOG.md),
+      # The build/test_assets tasks need the package's own assets/ sources, so
+      # they are kept out of the published package (only install ships).
+      files: ~w(lib/dic_ex.ex lib/dic_ex lib/dic_ex_web lib/mix/tasks/install.ex
+                priv/static mix.exs README.md LICENSE CHANGELOG.md),
       licenses: ["MIT"],
       links: %{"GitHub" => @source_url}
     ]
@@ -64,15 +63,14 @@ defmodule DicEx.MixProject do
       main: "DicEx",
       source_ref: "v#{@version}",
       source_url: @source_url,
-      extras: ["README.md"]
+      extras: ["README.md", "CHANGELOG.md", "CONTRIBUTING.md", "LICENSE"]
     ]
   end
 
   defp aliases do
     [
       setup: ["deps.get"],
-      build: ["dic_ex.build"],
-      test: ["test"]
+      build: ["dic_ex.build"]
     ]
   end
 end

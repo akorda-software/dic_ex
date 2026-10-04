@@ -5,8 +5,12 @@ defmodule DicEx.Roller do
   # explicitly so a deterministic stub (tests) or a seeded default (reproducible
   # sessions) can be swapped in without touching the evaluator.
 
-  alias DicEx.Result
-  alias DicEx.RNG.Deterministic
+  alias DicEx.{Parser, Result}
+  alias DicEx.RNG.{Deterministic, Seeded}
+
+  # Defence in depth for `r` (repeat): the parser rejects conditions that match
+  # every face, but a biased custom RNG could still keep matching forever.
+  @max_rerolls 100
 
   @doc """
   Evaluates an AST produced by `DicEx.Parser.parse/1`.
@@ -26,6 +30,11 @@ defmodule DicEx.Roller do
   defp eval_node({:dice, count, sides, mods}, acc, rng) do
     {group, rng} = roll_dice(count, sides, mods, rng)
     {[group | acc], rng}
+  end
+
+  defp eval_node({:neg, node}, acc, rng) do
+    {groups, rng} = eval_node(node, [], rng)
+    {apply_sign(groups, :-) ++ acc, rng}
   end
 
   defp eval_node({:op, op, left, right}, acc, rng) do
@@ -109,32 +118,19 @@ defmodule DicEx.Roller do
         {value, rng}
 
       {op, threshold, mode} ->
-        reroll_step(value, sides, op, threshold, mode, rng)
+        budget = if mode == :once, do: 1, else: @max_rerolls
+        reroll_step(value, sides, op, threshold, budget, rng)
     end
   end
 
-  defp reroll_step(value, sides, op, threshold, :repeat, rng) do
-    if matches?(value, op, threshold) do
+  defp reroll_step(value, sides, op, threshold, budget, rng) do
+    if budget > 0 and Parser.compare(value, op, threshold) do
       {v, rng} = next_roll(sides, rng)
-      reroll_step(v, sides, op, threshold, :repeat, rng)
+      reroll_step(v, sides, op, threshold, budget - 1, rng)
     else
       {value, rng}
     end
   end
-
-  defp reroll_step(value, sides, op, threshold, :once, rng) do
-    if matches?(value, op, threshold) do
-      next_roll(sides, rng)
-    else
-      {value, rng}
-    end
-  end
-
-  defp matches?(v, :lt, t), do: v < t
-  defp matches?(v, :le, t), do: v <= t
-  defp matches?(v, :eq, t), do: v == t
-  defp matches?(v, :ge, t), do: v >= t
-  defp matches?(v, :gt, t), do: v > t
 
   defp reroll_spec(mods) do
     Enum.find_value(mods, fn
@@ -233,14 +229,27 @@ defmodule DicEx.Roller do
 
     value =
       case value do
-        :exhausted -> 1
-        v when v > sides -> rem(v - 1, sides) + 1
-        v when v < 1 -> 1
-        v -> v
+        :exhausted ->
+          1
+
+        v when not is_integer(v) ->
+          raise ArgumentError,
+                "DicEx.RNG.Deterministic outcomes must be integers, got: #{inspect(v)}"
+
+        v when v > sides ->
+          rem(v - 1, sides) + 1
+
+        v when v < 1 ->
+          1
+
+        v ->
+          v
       end
 
     {value, rng}
   end
+
+  defp next_roll(sides, {Seeded, _} = rng), do: Seeded.next(rng, sides)
 
   defp next_roll(sides, mod) when is_atom(mod) do
     {mod.roll(sides), mod}

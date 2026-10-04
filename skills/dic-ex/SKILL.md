@@ -39,8 +39,10 @@ DicEx.format(result)                             # "2d20kh1 + 5 = 23"
 
 | opt | value | effect |
 | --- | --- | --- |
-| `:seed` | integer | reproducible sequence via the default RNG |
+| `:seed` | integer | reproducible sequence (private state; caller's `:rand` untouched) |
 | `:rng` | module \| `{module, state}` | `DicEx.RNG.Default` (default), `DicEx.RNG.Entropy` (crypto), or `{DicEx.RNG.Deterministic, [outcomes]}` (tests) |
+
+| `:max_dice` / `:max_sides` / `:max_length` | pos integer | parse limits (defaults 100 / 1000 / 256) |
 
 `roll_dice/3` also takes `:mod`, `:advantage`, `:disadvantage`.
 
@@ -48,15 +50,16 @@ DicEx.format(result)                             # "2d20kh1 + 5 = 23"
 
 | token | meaning |
 | --- | --- |
-| `NdS` | N dice of S sides (`d20` == `1d20`; d4–d100) |
+| `NdS` | N dice of S sides (`d20` == `1d20`; `d%` == `d100`) |
 | `kh[n]` / `kl[n]` | keep highest / lowest n (advantage / disadvantage) |
 | `dh[n]` / `dl[n]` | drop highest / lowest n |
 | `!` / `!p` | explode / explode & penetrate |
 | `r<op>n` | reroll (`< <= = >= >`); `ro` = once; bare `r1` ⇒ `<=` |
 | `+` / `-` | add / subtract pools or modifiers |
 
-Only `+`/`-` compose — **no** `*`, `/`, or parentheses. Examples: `8d6!dl1`,
-`1d20r1`, `1d8+2d6+2`, `4d6kh2`.
+Only `+`/`-` compose — **no** `*`, `/`, or parentheses; a sign only before the
+first term (`-1d4+5`). One reroll per pool. Examples: `8d6!dl1`, `1d20r1`,
+`1d8+2d6+2`, `4d6kh2`. Rejected as never-ending: `1d6r<=6`, `1d1!`.
 
 ### Result
 
@@ -111,19 +114,22 @@ end
 | --- | --- | --- |
 | `:default` | `"1d20"` | initial expression |
 | `:theme` | `"obsidian"` | `"obsidian"` / `"arcane"` / `"dnd"`, or a palette map (atom or string keys) |
-| `:engine` | `"3d"` | `"3d"` (Three.js + Rapier, physics-truth) or `"2d"` (canvas, server-authoritative) |
-| `:rng` | `nil` | RNG module; `nil` ⇒ seedable default |
-| `:on_roll` | `nil` | pid / registered name / `{name, node}` to receive `{:dic_ex_rolled, _}` |
+| `:engine` | `"3d"` | `"3d"` (Three.js + Rapier) or `"2d"` (canvas); both server-authoritative |
+| `:physics` | `false` | `true` ⇒ 3D landed faces become the result (client-decided, cheatable) |
+| `:rng` | `nil` | RNG module or `{module, state}`; `nil` ⇒ `DicEx.RNG.Default` |
+| `:limits` | `[]` | `max_dice` / `max_sides` / `max_length` |
+| `:labels` | English | `%{add:, clear:, roll:, rolling:, placeholder:, input:}` |
+| `:reveal_timeout` | `6000` | ms fallback reveal if the dice never settle |
+| `:on_roll` | `nil` | pid / name / `{name, node}` / `{:global, _}` / `{:via, _, _}` |
 
 ## Gotchas
 
-- **`:seed` reseeds the calling process's `:rand` and is NOT restored.** In a
-  long-lived LiveView a single seeded replay poisons later "random" rolls until
-  re-seeded. Thread `:rng` explicitly (or re-seed per request) for isolation.
-- **3D engine = physics-is-truth:** dice land where Rapier takes them and the
-  landed faces are reported back (`dic_ex:landed`), so the client influences the
-  revealed total. 2D engine is server-authoritative. Don't assume a
-  pre-computed server total is what the 3D view reveals.
+- **Server-authoritative by default.** Only `physics={true}` lets the 3D landed
+  faces become the result, and only for d4–d20 pools without explode/reroll;
+  the client then decides the outcome, so never use it where cheating matters.
+- **Re-run `mix dic_ex.install` after upgrading** so the vendored JS matches the
+  component (nonce/authoritative contract). For 2D-only apps import
+  `dic_ex_2d.min.js` (a few KB) instead of the ~2.7 MB full bundle.
 - **`roll_dice/3` advantage/disadvantage only applies when `count == 1`**; with
   a larger pool it is silently ignored (no error).
 - **`Deterministic` RNG must be threaded as a tuple** —

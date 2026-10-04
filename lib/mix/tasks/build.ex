@@ -27,7 +27,7 @@ defmodule Mix.Tasks.DicEx.Build do
 
     Mix.shell().info("[dicEx] bundling assets -> priv/static/dic_ex.min.js")
 
-    {time, _} =
+    {time, {_output, status}} =
       :timer.tc(fn ->
         System.cmd("node", ["build.mjs"],
           cd: assets_dir,
@@ -36,6 +36,7 @@ defmodule Mix.Tasks.DicEx.Build do
         )
       end)
 
+    if status != 0, do: Mix.raise("Falló la compilación del bundle dic_ex")
     Mix.shell().info("[dicEx] built in #{div(time, 1000)}ms")
   end
 

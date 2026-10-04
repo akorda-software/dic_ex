@@ -20,17 +20,31 @@ if Code.ensure_loaded?(Phoenix.LiveComponent) and Code.ensure_loaded?(Jason) do
 
     ## Options
 
-      * `default` — initial expression (default `"1d20"`).
-      * `theme` — `"obsidian"` (default), `"arcane"` or `"dnd"`. Tunes the pixel palette.
+      * `default` — initial expression (default `"1d20"`). Only applied when it
+        changes, so parent re-renders never wipe what the player typed.
+      * `theme` — `"obsidian"` (default), `"arcane"` or `"dnd"`, or a custom
+        palette map (see `DicEx.Theme`).
       * `engine` — `"3d"` (default; Three.js + Rapier physics) or `"2d"` (canvas,
         no physics: the die tumbles in 2D and lands on the authoritative value).
-        Both engines share the exact same Elixir roll; this only swaps the hook.
-      * `rng` — RNG module for the rolls (default `nil` ⇒ `DicEx.RNG.Default`,
-        reproducible via `:seed`). Pass `DicEx.RNG.Entropy` for cryptographic,
-        non-replayable randomness. Applies to whichever engine is selected.
-      * `on_roll` — a `pid` (or registered name) to notify of every roll via
-        `send/2` with `{:dic_ex_rolled, %{result: result, component: id}}`.
-        The host uses this to feed the AI game master the structured outcome.
+      * `physics` — `false` (default) or `true`. By default the server's roll is
+        always the result: the 3D dice tumble physically and settle on the
+        faces Elixir chose. With `physics={true}` the 3D engine becomes
+        *physics-is-truth*: the faces that land are reported back and become
+        the result. The client decides that outcome, so only use it where
+        cheating does not matter. It only applies to pools of d4/d6/d8/d10/d12/d20
+        without explode or reroll; other rolls stay server-authoritative.
+      * `rng` — RNG module or `{module, state}` for the rolls (default `nil` ⇒
+        `DicEx.RNG.Default`). Pass `DicEx.RNG.Entropy` for cryptographic,
+        non-replayable randomness.
+      * `limits` — keyword list of parse limits passed to `DicEx.roll_e/2`
+        (`:max_dice`, `:max_sides`, `:max_length`).
+      * `labels` — map overriding the UI strings: `:add`, `:clear`, `:roll`,
+        `:rolling`, `:placeholder`, `:input`. Defaults are English.
+      * `reveal_timeout` — milliseconds before the result is revealed even if the
+        dice never report settling (default `6000`).
+      * `on_roll` — a `pid`, registered name, `{name, node}`, `{:global, name}`
+        or `{:via, module, name}` to notify of every roll via `send/2` with
+        `{:dic_ex_rolled, %{result: result, component: id}}`.
 
     ## Receiving rolls
 
@@ -48,9 +62,31 @@ if Code.ensure_loaded?(Phoenix.LiveComponent) and Code.ensure_loaded?(Jason) do
     # The component is only defined when Phoenix LiveView is available so the
     # pure-rolling core stays usable without any web dependency.
 
-    alias DicEx.{Result, Theme}
+    require Logger
 
-    defp quick_dice, do: ~w(d4 d6 d8 d10 d12 d20)
+    alias DicEx.{Parser, Result, Theme}
+    alias DicEx.RNG.Deterministic
+
+    @quick_dice ~w(d4 d6 d8 d10 d12 d20)
+
+    # Geometry the 3D engine can read a landed face from without bias.
+    @physical_sides [4, 6, 8, 10, 12, 20]
+
+    @default_labels %{
+      add: "add",
+      clear: "clear",
+      roll: "Roll",
+      rolling: "rolling…",
+      placeholder: "1d4+2d6, 2d20kh1+5, 8d6! ...",
+      input: "Dice expression"
+    }
+
+    # Fallback only: if the dice never report settling (scene failed to init,
+    # tab was backgrounded, ...) reveal anyway after a generous timeout. The
+    # "dic_ex:settled"/"dic_ex:landed" events are the primary, in-sync paths.
+    @reveal_fallback 6000
+
+    defp quick_dice, do: @quick_dice
 
     # The LiveView hook name is what actually swaps the render engine. Both
     # hooks speak the same dic_ex:roll / dic_ex:settled contract, so the rest of
@@ -63,7 +99,11 @@ if Code.ensure_loaded?(Phoenix.LiveComponent) and Code.ensure_loaded?(Jason) do
     # hooks), so hosts can skin the roller without touching the bundle.
     defp resolve_theme(theme) do
       palette = Theme.resolve(theme)
-      name = if is_binary(theme) or is_atom(theme), do: to_string(theme), else: nil
+
+      name =
+        if is_binary(theme) or (is_atom(theme) and not is_nil(theme)),
+          do: to_string(theme)
+
       {palette, name}
     end
 
@@ -82,7 +122,6 @@ if Code.ensure_loaded?(Phoenix.LiveComponent) and Code.ensure_loaded?(Jason) do
         style={@style_vars}
         phx-hook={hook_name(@engine)}
         data-palette={@canvas_palette}
-        phx-target={@myself}
       >
         <div
           class="dicex-stage"
@@ -98,7 +137,7 @@ if Code.ensure_loaded?(Phoenix.LiveComponent) and Code.ensure_loaded?(Jason) do
               :for={d <- quick_dice()}
               type="button"
               class="dicex-die-btn"
-              title={"añadir " <> d}
+              title={"#{@labels.add} #{d}"}
               phx-click="add-die"
               phx-target={@myself}
               phx-value-die={d}
@@ -107,24 +146,33 @@ if Code.ensure_loaded?(Phoenix.LiveComponent) and Code.ensure_loaded?(Jason) do
             </button>
           </div>
 
-          <form phx-submit="roll" phx-target={@myself} class="dicex-form">
+          <form
+            phx-submit="roll"
+            phx-change="change"
+            phx-target={@myself}
+            class="dicex-form"
+          >
             <input
               class="dicex-input"
               type="text"
               name="expression"
               value={@expression}
-              placeholder="1d4+2d6, 2d20kh1+5, 8d6! ..."
+              placeholder={@labels.placeholder}
+              aria-label={@labels.input}
+              maxlength={@max_length}
               autocomplete="off"
             />
             <button type="button" class="dicex-clear-btn" phx-click="clear" phx-target={@myself}>
-              limpiar
+              {@labels.clear}
             </button>
-            <button type="submit" class="dicex-roll-btn">Tirar</button>
+            <button type="submit" class="dicex-roll-btn">{@labels.roll}</button>
           </form>
         </div>
 
+        <div class="dicex-error" role="alert" :if={@error}>{@error}</div>
+
         <div class="dicex-result" :if={@rolling}>
-          <div class="dicex-total dicex-rolling-total">tirando…</div>
+          <div class="dicex-total dicex-rolling-total">{@labels.rolling}</div>
         </div>
 
         <div class="dicex-result" :if={not @rolling and @result}>
@@ -145,13 +193,21 @@ if Code.ensure_loaded?(Phoenix.LiveComponent) and Code.ensure_loaded?(Jason) do
       {:ok,
        socket
        |> assign(:expression, "1d20")
+       |> assign(:default, nil)
        |> assign(:result, nil)
        |> assign(:pending_result, nil)
+       |> assign(:pending_authoritative, true)
        |> assign(:rolling, false)
        |> assign(:roll_nonce, 0)
+       |> assign(:error, nil)
        |> assign_theme("obsidian")
        |> assign(:engine, "3d")
+       |> assign(:physics, false)
        |> assign(:rng, nil)
+       |> assign(:limits, [])
+       |> assign(:max_length, Parser.default_limits().max_length)
+       |> assign(:labels, @default_labels)
+       |> assign(:reveal_timeout, @reveal_fallback)
        |> assign(:on_roll, nil)}
     end
 
@@ -168,33 +224,46 @@ if Code.ensure_loaded?(Phoenix.LiveComponent) and Code.ensure_loaded?(Jason) do
       |> assign(:canvas_palette, Jason.encode!(Theme.canvas_palette(palette)))
     end
 
-    # Fallback only: if the dice never report settling (scene failed to init,
-    # tab was backgrounded, ...) reveal anyway after a generous timeout. The
-    # "dic_ex:settled"/"dic_ex:landed" events are the primary, in-sync paths.
-    @reveal_fallback 6000
-
-    # The fallback timer carries the roll's nonce so it can't overwrite a later
+    # The fallback timer carries the roll's nonce so it can't reveal a later
     # roll's result if it fires stale (e.g. roll A settled, roll B started,
     # then A's timer wakes).
     @impl true
-    def update(%{reveal: result, nonce: nonce}, socket) do
+    def update(%{reveal_nonce: nonce}, socket) do
       {:ok,
-       if(socket.assigns.roll_nonce == nonce, do: maybe_reveal(socket, result), else: socket)}
+       if(socket.assigns.roll_nonce == nonce,
+         do: maybe_reveal(socket, socket.assigns.pending_result),
+         else: socket
+       )}
     end
 
     def update(%{id: id} = opts, socket) do
+      limits = Map.get(opts, :limits, [])
+
       socket =
         socket
         |> assign(:id, id)
         |> assign_theme(Map.get(opts, :theme, "obsidian"))
-        |> assign(:engine, Map.get(opts, :engine, "3d"))
+        |> assign(:engine, if(Map.get(opts, :engine) == "2d", do: "2d", else: "3d"))
+        |> assign(:physics, Map.get(opts, :physics, false) == true)
         |> assign(:rng, Map.get(opts, :rng))
+        |> assign(:limits, limits)
+        |> assign(
+          :max_length,
+          Keyword.get(limits, :max_length, Parser.default_limits().max_length)
+        )
+        |> assign(:labels, Map.merge(@default_labels, Map.get(opts, :labels, %{})))
         |> assign(:on_roll, Map.get(opts, :on_roll))
+        |> assign(:reveal_timeout, Map.get(opts, :reveal_timeout, @reveal_fallback))
 
+      # `default` seeds the input once (and again only if the host changes it),
+      # so a parent re-render can't overwrite what the player has built.
       socket =
         case Map.fetch(opts, :default) do
-          {:ok, default} -> assign(socket, :expression, default)
-          :error -> socket
+          {:ok, default} when default != socket.assigns.default ->
+            socket |> assign(:default, default) |> assign(:expression, default)
+
+          _ ->
+            socket
         end
 
       {:ok, socket}
@@ -204,32 +273,59 @@ if Code.ensure_loaded?(Phoenix.LiveComponent) and Code.ensure_loaded?(Jason) do
     # "1d4+2d6" build up naturally (click d4, d6, d6). Repeated clicks on the
     # same plain trailing term increment its count instead of stacking terms.
     @impl true
-    def handle_event("add-die", %{"die" => die}, socket) do
-      {:noreply, assign(socket, :expression, append_die(socket.assigns.expression, die))}
+    def handle_event("add-die", %{"die" => die}, socket) when die in @quick_dice do
+      {:noreply,
+       socket
+       |> assign(:expression, append_die(socket.assigns.expression, die))
+       |> assign(:error, nil)}
     end
 
+    def handle_event("add-die", _params, socket), do: {:noreply, socket}
+
+    # Keeps the server's copy of the expression in sync with what is typed, so
+    # tray clicks append to the visible text rather than to a stale value.
+    def handle_event("change", %{"expression" => expression}, socket)
+        when is_binary(expression) do
+      {:noreply, assign(socket, :expression, expression)}
+    end
+
+    def handle_event("change", _params, socket), do: {:noreply, socket}
+
     def handle_event("clear", _params, socket) do
-      {:noreply, assign(socket, :expression, "")}
+      {:noreply, socket |> assign(:expression, "") |> assign(:error, nil)}
     end
 
     # Primary reveal path: the JS hook reports that every die has finished its
     # settle animation, so we reveal the result exactly in sync with the dice.
     # The event name carries this component's id so several rollers can coexist
     # in the same LiveView without cross-firing each other's reveal.
-    def handle_event("dic_ex:settled:" <> _id, _params, socket) do
-      {:noreply, maybe_reveal(socket, socket.assigns[:pending_result])}
+    def handle_event("dic_ex:settled:" <> _id, params, socket) do
+      if stale?(socket, params),
+        do: {:noreply, socket},
+        else: {:noreply, maybe_reveal(socket, socket.assigns.pending_result)}
     end
 
-    # Physics-truth (3D) reveal: the hook reports the face values that actually
-    # landed up. We re-evaluate the expression with those values piped through
-    # the deterministic RNG, so modifiers (kh/dl/explode…) are still applied and
-    # the revealed result matches exactly what the player sees on the table.
-    def handle_event("dic_ex:landed:" <> _id, %{"values" => values}, socket) do
-      result = reroll_with(socket.assigns.expression, values)
-      {:noreply, maybe_reveal(socket, result)}
+    # The 3D hook reports the faces that are up once the dice rest. For an
+    # authoritative roll (the default) those are the faces the server chose and
+    # the event is just a "settled" signal. In physics mode the landed values
+    # become the result after validation; anything implausible falls back to
+    # the server's own roll.
+    def handle_event("dic_ex:landed:" <> _id, params, socket) do
+      %{pending_result: pending, pending_authoritative: authoritative} = socket.assigns
+
+      cond do
+        stale?(socket, params) or is_nil(pending) ->
+          {:noreply, socket}
+
+        authoritative ->
+          {:noreply, maybe_reveal(socket, pending)}
+
+        true ->
+          {:noreply, maybe_reveal(socket, physical_result(pending, params["values"]))}
+      end
     end
 
-    def handle_event("roll", %{"expression" => expression}, socket) do
+    def handle_event("roll", %{"expression" => expression}, socket) when is_binary(expression) do
       perform_roll(expression, socket)
     end
 
@@ -238,51 +334,108 @@ if Code.ensure_loaded?(Phoenix.LiveComponent) and Code.ensure_loaded?(Jason) do
     end
 
     defp perform_roll(expression, socket) do
-      case DicEx.roll_e(expression, roll_opts(socket.assigns[:rng])) do
+      socket = assign(socket, :expression, expression)
+
+      case DicEx.roll_e(expression, roll_opts(socket.assigns)) do
         {:ok, result} ->
           # animation kicks off immediately; the result is revealed when the dice
           # report settling/landing, with a fallback timer as safety. The nonce
-          # tags this roll so the timer can't reveal a stale result.
-          id = socket.assigns.id
+          # tags this roll so stale events and timers can't reveal it twice or
+          # reveal the wrong roll.
           nonce = socket.assigns.roll_nonce + 1
 
-          Task.start(fn ->
-            Process.sleep(@reveal_fallback)
-            send_update(__MODULE__, %{id: id, reveal: result, nonce: nonce})
-          end)
+          authoritative =
+            not (socket.assigns.physics and socket.assigns.engine == "3d" and
+                   physically_rollable?(expression))
+
+          send_update_after(
+            self(),
+            __MODULE__,
+            %{id: socket.assigns.id, reveal_nonce: nonce},
+            socket.assigns.reveal_timeout
+          )
 
           {:noreply,
            socket
            |> assign(:rolling, true)
            |> assign(:result, nil)
+           |> assign(:error, nil)
            |> assign(:pending_result, result)
+           |> assign(:pending_authoritative, authoritative)
            |> assign(:roll_nonce, nonce)
-           |> push_roll(result)}
+           |> push_roll(result, authoritative, nonce)}
 
         {:error, reason} ->
-          {:noreply, push_event(socket, error_event(socket.assigns.id), %{message: reason})}
+          {:noreply,
+           socket
+           |> assign(:error, reason)
+           |> push_event(error_event(socket.assigns.id), %{message: reason})}
       end
     end
 
-    defp roll_opts(nil), do: []
-    defp roll_opts(rng), do: [rng: rng]
+    defp roll_opts(%{rng: rng, limits: limits}) do
+      if rng, do: [{:rng, rng} | limits], else: limits
+    end
 
-    # Re-evaluates the expression forcing the supplied face values as the base
-    # rolls (used by the physics-truth 3D engine so the result matches the
-    # landed dice). Explodes that need more rolls than provided fall back to 1.
-    defp reroll_with(expression, values) do
-      DicEx.roll(expression, rng: {DicEx.RNG.Deterministic, values})
+    # Events from an older roll (in flight when a new one started) carry its
+    # nonce and are dropped. Hooks that predate the nonce send none.
+    defp stale?(socket, params) do
+      case params do
+        %{"nonce" => nonce} -> nonce != socket.assigns.roll_nonce
+        _ -> false
+      end
+    end
+
+    # Physics-is-truth only works when every die maps 1:1 onto a thrown die
+    # with readable, unbiased geometry: no explode/reroll (those need extra or
+    # hidden rolls) and only the standard polyhedra.
+    defp physically_rollable?(expression) do
+      case Parser.parse(expression) do
+        {:ok, ast} -> physical_node?(ast)
+        _ -> false
+      end
+    end
+
+    defp physical_node?({:num, _}), do: true
+    defp physical_node?({:neg, node}), do: physical_node?(node)
+    defp physical_node?({:op, _, l, r}), do: physical_node?(l) and physical_node?(r)
+
+    defp physical_node?({:dice, _count, sides, mods}) do
+      sides in @physical_sides and
+        not Enum.any?(mods, &(match?({:explode, _}, &1) or match?({:reroll, _, _, _}, &1)))
+    end
+
+    # Re-evaluates the expression with the landed faces as the dice values, so
+    # keep/drop still apply and the total matches the table. The values come
+    # from the client, so they must line up exactly with the thrown dice.
+    defp physical_result(%Result{} = pending, values) do
+      sides = for %{kind: :dice, sides: s, rolls: rolls} <- pending.groups, _ <- rolls, do: s
+
+      valid? =
+        is_list(values) and length(values) == length(sides) and
+          Enum.all?(Enum.zip(values, sides), fn {v, s} -> is_integer(v) and v in 1..s end)
+
+      if valid? do
+        DicEx.roll(pending.expression, rng: {Deterministic, values})
+      else
+        Logger.warning("[dicEx] ignoring invalid landed values: #{inspect(values, limit: 20)}")
+        pending
+      end
     end
 
     # Per-instance event names. `push_event/3` broadcasts to every hook on the
     # LiveView, so we suffix the roll/error channels with the component id and
-    # each hook only listens for its own. (`dic_ex:theme` stays global — a theme
-    # change should reach every roller on the page.)
+    # each hook only listens for its own.
     defp roll_event(id), do: "dic_ex:roll:#{id}"
     defp error_event(id), do: "dic_ex:error:#{id}"
 
-    defp push_roll(socket, %Result{} = result) do
-      push_event(socket, roll_event(socket.assigns.id), Result.to_roll_event(result))
+    defp push_roll(socket, %Result{} = result, authoritative, nonce) do
+      payload =
+        result
+        |> Result.to_roll_event()
+        |> Map.merge(%{authoritative: authoritative, nonce: nonce})
+
+      push_event(socket, roll_event(socket.assigns.id), payload)
     end
 
     # Reveal the pending result exactly once. Guards against the settle event
@@ -302,23 +455,32 @@ if Code.ensure_loaded?(Phoenix.LiveComponent) and Code.ensure_loaded?(Jason) do
     @rolled_msg :dic_ex_rolled
 
     defp notify_host(socket, %Result{} = result) do
-      payload = {@rolled_msg, %{result: result, component: socket.assigns.id}}
-
-      case socket.assigns[:on_roll] do
+      case socket.assigns.on_roll do
         nil -> :ok
-        {name, node} when is_atom(name) and is_atom(node) -> send({name, node}, payload)
-        target when is_pid(target) or is_atom(target) -> send(target, payload)
+        dest -> deliver(dest, {@rolled_msg, %{result: result, component: socket.assigns.id}})
       end
+    end
+
+    # A missing or malformed `on_roll` target must never crash the host
+    # LiveView mid-reveal; log it instead.
+    defp deliver(dest, payload) do
+      case GenServer.whereis(dest) do
+        nil -> Logger.warning("[dicEx] on_roll target #{inspect(dest)} is not alive")
+        target -> send(target, payload)
+      end
+    rescue
+      e in [ArgumentError, FunctionClauseError] ->
+        Logger.warning("[dicEx] invalid on_roll target #{inspect(dest)}: #{Exception.message(e)}")
     end
 
     defp append_die("", die), do: "1" <> die
 
-    defp append_die(expr, die) do
-      sides = String.trim_leading(die, "d")
+    defp append_die(expr, "d" <> sides = die) do
+      trailing = ~r/(?<![\dA-Za-z])(\d+)d#{sides}$/
 
-      case Regex.run(~r/(\d+)d#{sides}$/, expr) do
-        [full, count] ->
-          String.replace(expr, full, "#{String.to_integer(count) + 1}d#{sides}", global: false)
+      case Regex.run(trailing, expr) do
+        [_full, count] ->
+          Regex.replace(trailing, expr, "#{String.to_integer(count) + 1}d#{sides}")
 
         _ ->
           expr <> "+1" <> die

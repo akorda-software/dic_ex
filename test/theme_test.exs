@@ -24,6 +24,31 @@ defmodule DicEx.ThemeTest do
       assert palette.bg == "#ffffff"
     end
 
+    test "unknown string keys are ignored without creating atoms" do
+      key = "dicex_unknown_#{System.unique_integer([:positive])}"
+      palette = Theme.resolve(%{key => "#fff"})
+      assert palette == Theme.defaults()
+      assert_raise ArgumentError, fn -> String.to_existing_atom(key) end
+    end
+
+    test "values that could escape the style attribute are rejected" do
+      for bad <- [
+            "red; background: url(https://evil.test/x)",
+            "url(//evil.test/x)",
+            "#fff\" onmouseover=\"x",
+            "red}",
+            123
+          ] do
+        assert Theme.resolve(%{bg: bad}).bg == Theme.defaults().bg
+      end
+    end
+
+    test "functional colour notations are accepted" do
+      for ok <- ["rgba(1, 2, 3, 0.5)", "hsl(200deg 50% 40% / 80%)", "var(--brand)", "tomato"] do
+        assert Theme.resolve(%{bg: ok}).bg == ok
+      end
+    end
+
     test "always returns a complete map" do
       for input <- [:obsidian, "arcane", %{accent: "#fff"}, %{"ink" => "#000"}] do
         assert Map.keys(Theme.resolve(input)) |> Enum.sort() ==

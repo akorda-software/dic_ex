@@ -2,9 +2,10 @@ defmodule DicEx.RNG.Default do
   @moduledoc """
   The default RNG: a thin wrapper around Erlang's `:rand`.
 
-  Every roll draws from `:rand.uniform/1`, so seeding the calling process (via
-  `DicEx.roll/2`'s `:seed` option) yields a reproducible sequence. Use
-  `DicEx.RNG.Entropy` when you want cryptographic, non-replayable randomness.
+  Every roll draws from the calling process's `:rand` state. For reproducible
+  sequences use `DicEx.roll/2`'s `:seed` option (backed by `DicEx.RNG.Seeded`,
+  which keeps its own state). Use `DicEx.RNG.Entropy` when you want
+  cryptographic, non-replayable randomness.
   """
   @behaviour DicEx.RNG
 
@@ -15,21 +16,26 @@ defmodule DicEx.RNG.Default do
 end
 
 defmodule DicEx.RNG.Seeded do
-  @moduledoc false
-  @behaviour DicEx.RNG
+  @moduledoc """
+  A reproducible RNG with its own `:rand` state, threaded through the roller.
 
-  @impl true
-  def roll(sides) when is_integer(sides) and sides > 0 do
-    :rand.uniform(sides)
-  end
+  This is what `DicEx.roll/2`'s `:seed` option uses. The state lives in the
+  `{DicEx.RNG.Seeded, state}` tuple, so seeding never touches the calling
+  process's global `:rand` state:
 
-  @doc """
-  Seeds the global `:rand` state from an integer seed. Returns `:ok`.
-  Use this to obtain a reproducible roll sequence with the default RNG.
+      DicEx.roll("4d6", rng: DicEx.RNG.Seeded.new(42))
+      # same as
+      DicEx.roll("4d6", seed: 42)
   """
-  def seed(seed) when is_integer(seed) do
-    _ = :rand.seed(:exsss, seed)
-    :ok
+
+  @doc "Builds a seeded RNG state from an integer seed."
+  def new(seed) when is_integer(seed), do: {__MODULE__, :rand.seed_s(:exsss, seed)}
+
+  @doc false
+  # Called by the roller with the carried state tuple. Returns {value, new_state}.
+  def next({__MODULE__, state}, sides) when is_integer(sides) and sides > 0 do
+    {value, state} = :rand.uniform_s(sides, state)
+    {value, {__MODULE__, state}}
   end
 end
 
