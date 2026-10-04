@@ -2,7 +2,7 @@ defmodule DicEx.MixProject do
   use Mix.Project
 
   @version "0.3.0"
-  @source_url "https://github.com/kukapu/dic_ex"
+  @source_url "https://github.com/akorda-software/dic_ex"
   @description """
   Pixel-art 3D dice roller for Phoenix LiveView. Authoritative rolls in Elixir
   (D&D-style notation: NdS, advantage/disadvantage, drop/keep, explode) with an

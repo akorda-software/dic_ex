@@ -4,10 +4,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kukapu/dic_ex/actions/workflows/ci.yml"><img src="https://github.com/kukapu/dic_ex/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+  <a href="https://github.com/akorda-software/dic_ex/actions/workflows/ci.yml"><img src="https://github.com/akorda-software/dic_ex/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
   <a href="https://hex.pm/packages/dic_ex"><img src="https://img.shields.io/hexpm/v/dic_ex.svg" alt="Hex.pm"/></a>
   <a href="https://hexdocs.pm/dic_ex"><img src="https://img.shields.io/badge/documentation-gray" alt="Documentation"/></a>
-  <a href="https://github.com/kukapu/dic_ex/blob/main/LICENSE"><img src="https://img.shields.io/hexpm/l/dic_ex.svg" alt="License"/></a>
+  <a href="https://github.com/akorda-software/dic_ex/blob/main/LICENSE"><img src="https://img.shields.io/hexpm/l/dic_ex.svg" alt="License"/></a>
 </p>
 
 > D&D-style dice rolls in pure Elixir, with an optional Three.js + Rapier 3D
@@ -291,7 +291,7 @@ Full API docs are at [hexdocs.pm/dic_ex](https://hexdocs.pm/dic_ex).
 
 Development setup, quality gates, and the release/publish workflow live in
 [CONTRIBUTING.md](./CONTRIBUTING.md). Bug reports and pull requests are welcome
-at [github.com/kukapu/dic_ex](https://github.com/kukapu/dic_ex).
+at [github.com/akorda-software/dic_ex](https://github.com/akorda-software/dic_ex).
 
 ## License
 
