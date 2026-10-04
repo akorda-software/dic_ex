@@ -1,0 +1,60 @@
+name: Publish to Hex
+
+# Publishing a GitHub release (tag `v<version>`) publishes that version to Hex,
+# docs included. Needs the `HEX_API_KEY` repository secret
+# (`mix hex.user key generate --key-name github-actions --permission api:write`).
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hex-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish ${{ github.event.release.tag_name }}
+    runs-on: ubuntu-22.04
+    environment: hex
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "29"
+          elixir-version: "1.20.0"
+
+      - name: Tag, mix.exs and CHANGELOG agree on the version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version=$(sed -n 's/^  @version "\(.*\)"$/\1/p' mix.exs)
+          echo "tag=$TAG mix.exs=$version"
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::Release tag $TAG does not match mix.exs version v$version"
+            exit 1
+          fi
+          if ! grep -q "^## \[$version\] - " CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no dated section for $version"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Quality gates
+        run: |
+          mix compile --warnings-as-errors
+          mix format --check-formatted
+          mix test
+
+      - name: Publish package and docs
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+        run: mix hex.publish --yes

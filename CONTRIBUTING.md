@@ -53,8 +53,9 @@ Gotchas:
   is never touched by esbuild — edit it directly.
 - **`assets/js/` is vestigial and empty.** Real sources are `assets/src/`; the
   esbuild entry point is `assets/src/index.js` (sets `window.DicExHooks`).
-- **~2.7 MB is expected.** Rapier's WASM is inlined as base64 so consumers serve
-  a single file. Don't split it.
+- **~2.7 MB is expected** for `dic_ex.min.js`: Rapier's WASM is inlined as
+  base64 so consumers serve a single file. 2D-only apps use
+  `dic_ex_2d.min.js` (entry `assets/src/index_2d.js`, a few KB).
 - **Package manager fallback is pnpm → bun → npm** (the build task auto-installs
   on first run). The project standard is **pnpm** (`assets/pnpm-lock.yaml`).
 
@@ -77,27 +78,35 @@ version lives in three places that must agree — `mix.exs` (`@version`, line 4)
    ```
 4. **Quality gates** (see above) must pass.
 5. **Rebuild assets** if `assets/src/` changed (see above), and commit the new
-   `priv/static/dic_ex.min.js` into the release.
-6. **Commit, tag, push.** Commit style is lowercase imperative; the tag is
-   `v<version>` because `mix.exs` sets `source_ref: "v#{@version}"`:
+   `priv/static/dic_ex.min.js` / `dic_ex_2d.min.js` into the release (CI fails
+   if they're stale).
+6. **Commit and push.** Commit style is lowercase imperative:
    ```bash
-   git add mix.exs CHANGELOG.md priv/static/dic_ex.min.js
+   git add mix.exs CHANGELOG.md
    git commit -m "release: vx.y.z"
-   git tag vx.y.z
-   git push && git push --tags
+   git push
    ```
-7. **Publish to Hex** (first time: `mix hex.user auth`):
+   Check the file list with `mix hex.build` (the tarball is gitignored).
+7. **Publish a GitHub release** with tag `v<version>` (the tag must be
+   `v<version>` because `mix.exs` sets `source_ref: "v#{@version}"`):
    ```bash
-   mix hex.build      # inspect the file list; dic_ex-<version>.tar is gitignored
-   mix hex.publish    # re-builds and uploads
-   mix hex.info dic_ex
+   gh release create vx.y.z --title "vx.y.z" --notes-file <(changelog section)
    ```
+   `.github/workflows/publish.yml` then checks that the tag, `mix.exs` and
+   `CHANGELOG.md` agree, runs the quality gates and runs `mix hex.publish`
+   (package + docs). It needs the `HEX_API_KEY` repository secret:
+   ```bash
+   mix hex.user key generate --key-name github-actions --permission api:write
+   ```
+   Then `mix hex.info dic_ex` to confirm.
 
 Release gotchas:
 
 - **A Hex version, once published, is immutable** — Hex rejects re-publishing the
-  same `<package>-<version>`. Verify the version and tarball contents with
-  `mix hex.build` before confirming `mix hex.publish`.
+  same `<package>-<version>` (after the first hour). Verify the version and
+  tarball contents with `mix hex.build` before publishing the GitHub release.
+  If the workflow fails before publishing, fix it and re-run the job; don't
+  reuse a tag that already reached Hex.
 - **Tag format is `v<version>`**, not bare `0.2.0`. A bare/missing tag breaks
   ex_doc source links.
 - **Pre-1.0 SemVer:** while at `0.x`, breaking changes are allowed in a MINOR
